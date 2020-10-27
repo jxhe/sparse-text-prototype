@@ -131,7 +131,7 @@ class TemplateModel(BaseFairseqModel):
         parser.add_argument('--inveditor-embed-path', type=str, metavar='STR',
                             help='path to pre-trained encoder embedding')
         parser.add_argument('--retriever', type=str, metavar='STR',
-                            choices=['sentence-bert', 'precompute_emb', 'bert'],
+                            choices=['precompute_emb', 'bert'],
                             help='the retrieve module')
         parser.add_argument('--grad-lambda', type=str, metavar='BOOL',
                             help='if update lambda with gradient descent')
@@ -343,17 +343,7 @@ class TemplateModel(BaseFairseqModel):
             cuda=cuda
         )
 
-
-        if args.retriever == 'sentence-bert':
-            retriever = SentBert(
-                class_num=args.num_class,
-                dictionary=task.target_dictionary,
-                retrieve_embed=args.retrieve_embed,
-                linear_bias=options.eval_bool(args.linear_bias),
-                stop_grad=options.eval_bool(args.stop_bert_grad),
-                freeze=options.eval_bool(args.freeze_retriever)
-                )
-        elif args.retriever == 'bert':
+        if args.retriever == 'bert':
             retriever = BertRetriever(
                 dictionary=task.target_dictionary,
                 emb_dataset_path=args.emb_dataset_file,
@@ -700,85 +690,6 @@ class TemplateModel(BaseFairseqModel):
 
         return res
 
-    def ppo_forward(self, src_tokens, src_lengths, temp_tokens, temp_lengths,
-                temp_ids, logits, prev_output_tokens, **kwargs) -> dict:
-        """
-        Args:
-            src_tokens (LongTensor): the src tokens, (batch * nsample, seq_length)
-            temp_tokens (LongTensor): the template tokens, (batch * nsample, seq_length)
-            temp_lengths:  (batch * nsample)
-            temp_ids (LongTensor): the index of selected templates, (batch * nsample)
-            logits (tensor): the output logits of classification network,
-                             shape of (batch, num_class)
-        """
-
-        if self.training:
-            # E_{q(t|x)q(z|x,t)}[log p(x|t,z)] =
-            # \sum_i\sum_n [prob(t_ni=1)][digamma(\lambda_i) - digamma(\sum_j\lambda_j)]
-            term2 = F.softmax(logits, dim=1) * ((torch.digamma(self.lambda_) - torch.digamma(self.lambda_.sum())).unsqueeze(0))
-
-            # (batch, num_class) -> (batch)
-            term2 = term2.sum(1)
-
-        else:
-            theta = self.lambda_ / self.lambda_.sum()
-            term2 = F.softmax(logits, dim=1) * torch.log(theta)
-            term2 = term2.sum(1)
-
-
-        digamma_vec = torch.digamma(self.lambda_) - torch.digamma(self.lambda_.sum())
-        digamma_select = torch.index_select(digamma_vec, dim=0, index=temp_ids)
-        digamma_select = digamma_select.index_select(0, kwargs['revert_order'])
-
-        # (batch, nsample)
-        digamma_select = digamma_select.view(-1, self.infer_ns)
-
-        if self.training:
-            # torch.lgamma(x) seems to have numeric erros when x is larger than 1e4
-            # E_{q(\theta; \lambda)}[log p(\theta) - \log q(\theta)] / (number of all training samples)
-            term1 = self.alpha_stats + self.digamma_stats2(self.alpha, self.lambda_) \
-                    - (self.digamma_stats1(self.lambda_) +
-                        self.digamma_stats2(self.lambda_, self.lambda_))
-            # term1 = self.alpha_stats + self.digamma_stats2(self.alpha, self.lambda_) \
-            #         - (loggamma(self.lambda_.sum().item()) - loggamma(self.lambda_.cpu().numpy()).sum() +
-            #             self.digamma_stats2(self.lambda_, self.lambda_))
-
-            term1 = term1 / kwargs['data_len']
-        else:
-            term1 = 0.
-
-        # z: (batch * nsample, nsz, nz)
-        # KLz: (batch * nsample)
-        z, KLz, _ = self.vae_encoder(src_tokens, src_lengths, temp_tokens, temp_lengths, **kwargs)
-        z = z.squeeze(1)
-
-        # (batch * nsample, tgt_len, vocab)
-        recon_out = self.editor(temp_tokens, temp_lengths, prev_output_tokens,
-            edit_vector=z, src_t=temp_tokens, src_l=temp_lengths)
-
-        # neg_entropy: (batch)
-        tmp = F.log_softmax(logits, dim=1)
-        prob = torch.exp(tmp)
-        neg_entropy = (prob * tmp).sum(dim=1)
-
-        temp_ids = temp_ids.index_select(0, kwargs['revert_order'])
-        # (batch, nsample)
-        temp_ids_reshape = temp_ids.view(-1, self.infer_ns)
-
-        # (batch, nsample)
-        logq = torch.gather(F.log_softmax(logits, dim=1), dim=1, index=temp_ids_reshape)
-
-
-        res = {"KLz": KLz,
-               "recon_out": recon_out,
-               "logits": logits,
-               "KLtheta": -term1,
-               "KLt": neg_entropy - term2,
-               "logq": logq,
-               "digamma_select": digamma_select,
-               }
-
-        return res
 
     def guu_forward(self, src_tokens, src_lengths, temp_tokens, temp_lengths,
                 temp_ids, logits, prev_output_tokens, **kwargs) -> dict:
