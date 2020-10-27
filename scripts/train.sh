@@ -32,13 +32,14 @@ stop_bert_grad=1
 freeze_retriever=0
 reinforce=1
 opt=adam
+update_freq=1
 
 # hyperparameters for lambda update
 forget_rate=0.8
 decay_rate=1
 
 # some important hyperparameters that we may need to change
-rescale_factor=1. # rescaling factor for reinforce sampling
+rescale_factor=0.3 # rescaling factor for reinforce sampling
 free_bits=0       # KL free bits for mitigating posterior collapse
 alpha=0.1        # Dirichlet hyperparameters
 lambda_config="0:0,1500:1"  # KL weights annealing schedule
@@ -162,11 +163,11 @@ then
     SAVE=${LOADDIR}
     TENSORBOARD=${SAVE}/tensorboard
 else
-    SAVE_ROOT="checkpoint/${data_bin}/${DATE}/${data_bin}_${opt}_iv${inv_editor}_alpha${alpha}_kappa${kappa}"
-    SAVE_ROOT="${SAVE_ROOT}_rf${reinforce}_ns${ns}_sb${stop_bert_grad}"
-    SAVE_ROOT="${SAVE_ROOT}_fr${freeze_retriever}_ew${entropy_w}_tw${term2_w}_copy${copy}_editdim${edit_embed_dim}"
+    SAVE_ROOT="checkpoint/${data_bin}/${DATE}/${data_bin}_${opt}_noeditvec_alpha${alpha}_kappa${kappa}"
+    SAVE_ROOT="${SAVE_ROOT}_ns${ns}"
+    SAVE_ROOT="${SAVE_ROOT}_editdim${edit_embed_dim}"
     SAVE_ROOT="${SAVE_ROOT}_rtr${retriever}_fr${forget_rate}_dr${decay_rate}_rf${rescale_factor}_fb${free_bits}"
-    SAVE_ROOT="${SAVE_ROOT}_embt${emb_type}_lc${lambda_conifg_str}_gpu${GPUSTR}_c${criterion}${cstring}"
+    SAVE_ROOT="${SAVE_ROOT}_embt${emb_type}_lc${lambda_conifg_str}_uf${update_freq}_gpu${GPUSTR}_c${criterion}${cstring}"
 
     SAVE=${SAVE_ROOT}
     TENSORBOARD=${SAVE}/tensorboard
@@ -200,7 +201,7 @@ CUDA_VISIBLE_DEVICES=${GPU} python train.py \
     --max-tokens ${max_tokens} \
     --log-format simple --log-interval ${log_interval} \
     --retriever ${retriever} --inv-editor ${inv_editor} \
-    --max-update ${max_update} \
+    --max-update ${max_update} --update-freq ${update_freq} \
     --validate-interval ${validate_interval} --best-checkpoint-metric ppl --no-epoch-checkpoints \
     --no-last-checkpoints \
     --save-interval-updates ${save_interval_updates} --keep-interval-updates 1 \
