@@ -114,7 +114,7 @@ then
     ns=10
 elif [ "$data_bin" = "yelp_large" ];
 then
-    max_tokens=1024 # distributed on two gpus
+    max_tokens=2048 # distributed on two gpus
     save_interval_updates=5000
     warmup_updates=150000
     max_update=500000

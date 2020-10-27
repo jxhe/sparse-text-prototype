@@ -13,15 +13,16 @@ from transformers import *
 
 
 
-def get_sentence_features(batches, tokenizer, model, device):
+def get_sentence_features(batches, tokenizer, model, device, maxlen=500):
     features = tokenizer.batch_encode_plus(batches, padding=True,
-        return_attention_mask=True, return_token_type_ids=True)
+        return_attention_mask=True, return_token_type_ids=True,
+        truncation=True, max_length=500)
     attention_mask = torch.tensor(features['attention_mask'], device=device)
     input_ids = torch.tensor(features['input_ids'], device=device)
     token_type_ids=torch.tensor(features['token_type_ids'], device=device)
 
     # (batch, seq_len, nfeature)
-    token_embeddings = model(input_ids=input_ids, 
+    token_embeddings = model(input_ids=input_ids,
         attention_mask=attention_mask,
         token_type_ids=token_type_ids)[0]
 
@@ -50,7 +51,7 @@ def hdf5_create_dataset(group, input_file, fp16=False):
                     embed = embed.cpu().numpy()
                     if fp16:
                         embed = embed.astype('float16')
-                    group.create_dataset(f'{gname}_{cur}', embed.shape, 
+                    group.create_dataset(f'{gname}_{cur}', embed.shape,
                         dtype='float32' if not fp16 else 'float16', data=embed)
                     cur += 1
 
@@ -65,7 +66,7 @@ def hdf5_create_dataset(group, input_file, fp16=False):
                 embed = embed.cpu().numpy()
                 if fp16:
                     embed = embed.astype('float16')
-                group.create_dataset(f'{gname}_{cur}', embed.shape, 
+                group.create_dataset(f'{gname}_{cur}', embed.shape,
                     dtype='float32' if not fp16 else 'float16', data=embed)
                 cur += 1
 
@@ -180,16 +181,16 @@ def csv_create_dataset(output_file, input_file, fp16=False):
     fout.close()
 
 
-MODELS = [BertModel, BertTokenizer, 'bert-base-uncased']
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='pre-compute the Bert embeddings')
     parser.add_argument('dataset', type=str, help='the path to the dataset name')
     parser.add_argument('--numpy', action='store_true', help='store into numpy memmap format')
-    parser.add_argument('--template-only', action='store_true', default=False,
-        help='only precomputing the template embeddings')
-    parser.add_argument('--fp16', action='store_true', default=False, 
+    parser.add_argument('--split', type=str, default=None,
+        help='if specified, only compute for this split')
+    parser.add_argument('--fp16', action='store_true', default=False,
         help='whether to use half float point')
+    parser.add_argument('--sent-bert', action='store_true', default=False,
+        help='whether to use sentence-BERT')
 
     args = parser.parse_args()
     args.cuda = torch.cuda.is_available()
@@ -200,22 +201,24 @@ if __name__ == '__main__':
 
     device = "cuda" if args.cuda else "cpu"
 
-    model_class, tokenizer_class, pretrained_weights = MODELS
-    model = model_class.from_pretrained(pretrained_weights)
-    tokenizer = tokenizer_class.from_pretrained(pretrained_weights)
+    model_name = 'bert-base-uncased' if not args.sent_bert else 'sentence-transformers/bert-base-nli-mean-tokens'
+    model_short = 'bert' if not args.sent_bert else 'sentbert'
+
+    model = AutoModel.from_pretrained(model_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
 
     model.to(device)
     model.eval()
 
-    gname_list = ['template'] if args.template_only else ['valid', 'test', 'template', 'train']
+    gname_list = [args.split] if args.split is not None else ['valid', 'test', 'template', 'train']
     batch_size = 128
 
     for gname in gname_list:
         if os.path.isfile(f'datasets/{args.dataset}/{gname}.txt'):
-            csv_create_dataset(os.path.join(save_dir, f'{args.dataset}.bert.{gname}.csv.gz'), 
+            csv_create_dataset(os.path.join(save_dir, f'{args.dataset}.{model_short}.{gname}.csv.gz'),
                 os.path.join(f'datasets/{args.dataset}/{gname}.txt'), args.fp16)
-        elif gname != 'test':
-            raise ValueError(f'{gname} file must exist')
+        # elif gname != 'test':
+        #     raise ValueError(f'{gname} file must exist')
 
     # with h5py.File(os.path.join(save_dir, f'{args.dataset}.bert.hdf5'), 'w') as fout:
     #     for gname in ['valid', 'test', 'template', 'train']:
