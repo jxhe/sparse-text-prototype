@@ -1,4 +1,5 @@
-import h5py
+import os
+import json
 
 import torch
 import torch.nn as nn
@@ -6,6 +7,7 @@ import torch.nn.functional as F
 
 from itertools import chain
 from fairseq import utils
+from datasets import load_dataset
 
 class PrecomputeEmbedRetriever(nn.Module):
     """the retriever module based on pretrained embeddings"""
@@ -16,20 +18,26 @@ class PrecomputeEmbedRetriever(nn.Module):
 
         self.dict = dictionary
 
-        self.dataset = h5py.File(emb_dataset_path, 'r')     
+        self.dataset = {}
+        split_list = ['template', 'train', 'valid', 'test']
+        for split in split_list:
+            if os.path.isfile(f'{emb_dataset_path}.{split}.csv.gz'):
+                self.dataset[split] = load_dataset('csv',
+                                            data_files=f'{emb_dataset_path}.{split}.csv.gz',
+                                            cache_dir='hf_dataset_cache')
 
-        template_group = self.dataset['template']
+        template_group = self.dataset['template']['train']
         num_template = len(template_group)
         template_weight = []
 
         for i in range(num_template):
-            template_weight.append(template_group[f'template_{i}'][()])
+            template_weight.append(json.loads(template_group[i]['embedding']))
 
         template_weight = torch.tensor(template_weight)
 
-        print('read h5py template embeddings complete!')   
+        print('read template embeddings complete!')
 
-        nfeat = template_weight.size(1)     
+        nfeat = template_weight.size(1)
 
         self.linear1 = nn.Linear(nfeat, nfeat, bias=False)
 
@@ -77,9 +85,9 @@ class PrecomputeEmbedRetriever(nn.Module):
 
         id_ = samples[key]
 
-        embeddings = [self.dataset[split][f'{split}_{i.item()}'][()] for i in id_]
+        embeddings = [json.loads(self.dataset[split]['train'][i.item()]['embedding']) for i in id_]
         embeddings = self.linear1.weight.new_tensor(embeddings)
- 
+
         if self.prune_linear2_weight is None:
             logits = self.linear2(self.middle(self.linear1(embeddings)))
         else:

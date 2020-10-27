@@ -5,7 +5,6 @@ import torch.nn.functional as F
 import numpy as np
 import copy
 import warnings
-import h5py
 
 from fairseq import options, utils
 from fairseq.models import (
@@ -20,6 +19,7 @@ from fairseq.modules import AdaptiveSoftmax
 from fairseq.models.lstm import LSTMDecoder
 
 from scipy.special import digamma,loggamma
+from datasets import load_dataset
 
 from .vae import VAEEncoder
 from .inv_editor import GuuInvEditor, LevenshteinInvEditor
@@ -43,9 +43,12 @@ class TemplateModel(BaseFairseqModel):
 
         self.decoder = decoder
 
-        with h5py.File(args.emb_dataset_file, 'r') as dataset:  
-            template_group = dataset['template']
-            self.num_class = len(template_group)
+        template_group = load_dataset('csv',
+                                      data_files=f'{args.emb_dataset_file}.template.csv.gz',
+                                      cache_dir='hf_dataset_cache')
+
+        template_group = template_group['train']
+        self.num_class = len(template_group)
 
         self.device = torch.device('cuda' if cuda else 'cpu')
 
@@ -340,7 +343,7 @@ class TemplateModel(BaseFairseqModel):
             cuda=cuda
         )
 
-    
+
         if args.retriever == 'sentence-bert':
             retriever = SentBert(
                 class_num=args.num_class,
@@ -352,9 +355,8 @@ class TemplateModel(BaseFairseqModel):
                 )
         elif args.retriever == 'bert':
             retriever = BertRetriever(
-                class_num=args.num_class,
                 dictionary=task.target_dictionary,
-                retrieve_embed=args.retrieve_embed,
+                emb_dataset_path=args.emb_dataset_file,
                 rescale=args.embed_init_rescale,
                 linear_bias=options.eval_bool(args.linear_bias),
                 stop_grad=options.eval_bool(args.stop_bert_grad),

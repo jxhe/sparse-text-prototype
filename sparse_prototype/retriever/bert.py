@@ -19,7 +19,8 @@ class BertRetriever(nn.Module):
         self.stop_grad = stop_grad
         self.device = torch.device("cuda" if cuda else "cpu")
 
-        template_group = self.dataset['template']
+        dataset = h5py.File(emb_dataset_path, 'r') 
+        template_group = dataset['template']
         num_template = len(template_group)
         template_weight = []
 
@@ -29,10 +30,11 @@ class BertRetriever(nn.Module):
         template_weight = torch.tensor(template_weight)
 
         print('read h5py template embeddings complete!')
+        dataset.close()
         nfeat = template_weight.size(1)
 
         self.linear1 = nn.Linear(nfeat, nfeat, bias=False)
-        self.linear2 = nn.Linear(nfeat, class_num, bias=linear_bias)
+        self.linear2 = nn.Linear(nfeat, num_template, bias=linear_bias)
 
         # this should be consistent with pre-saved template embeddings
         MODELS = [BertModel, BertTokenizer, 'bert-base-uncased']
@@ -89,7 +91,7 @@ class BertRetriever(nn.Module):
 
 
         Returns:
-            logits (tensor): shape (B, class_num)
+            logits (tensor): shape (B, num_template)
         """
 
         net_input = samples['net_input']

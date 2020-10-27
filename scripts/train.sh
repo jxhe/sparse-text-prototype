@@ -19,7 +19,7 @@ retrieve_split=valid1
 criterion="sp_elbo"
 
 glove_path=glove_embeddings/${data_bin}_glove.txt
-emb_dataset_file=precompute_embedding_datasets/${data_bin}.${emb_type}.hdf5
+emb_dataset_file=precompute_embedding_datasets/${data_bin}/${data_bin}.${emb_type}
 
 # optimization hyperparameters
 warmup_init_lr='1e-03'
@@ -80,7 +80,7 @@ done
 if [ "$eval_mode" = "none" ];
 then
     stdout="stdout.log"
-    eval_params="--eval_mode none"
+    eval_params="--eval-mode none"
 else
     stdout="eval_${valid_subset}_${eval_mode}_prune${prune_num}.log"
     eval_params="--eval-mode ${eval_mode} --iw-nsamples ${iw_nsamples} \
@@ -157,8 +157,11 @@ declare -a rescale_list=("0.3")
 declare -a alpha_list=("10")
 
 
-if [[ -v LOADDIR && eval_mode = "none" ]];
+if [[ -v LOADDIR && eval_mode != "none" ]];
 then
+    SAVE=${LOADDIR}
+    TENSORBOARD=${SAVE}/tensorboard
+else
     SAVE_ROOT="checkpoint/${data_bin}/${DATE}/${data_bin}_${opt}_iv${inv_editor}_alpha${alpha}_kappa${kappa}"
     SAVE_ROOT="${SAVE_ROOT}_rf${reinforce}_ns${ns}_sb${stop_bert_grad}"
     SAVE_ROOT="${SAVE_ROOT}_fr${freeze_retriever}_ew${entropy_w}_tw${term2_w}_copy${copy}_editdim${edit_embed_dim}"
@@ -169,9 +172,6 @@ then
     TENSORBOARD=${SAVE}/tensorboard
 
     rm -r ${SAVE}; mkdir -p ${SAVE} ${TENSORBOARD}
-else
-    SAVE=${LOADDIR}
-    TENSORBOARD=${SAVE}/tensorboard
 fi
 
 if [[ -v LOADDIR ]];

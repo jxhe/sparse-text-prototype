@@ -316,23 +316,23 @@ class Trainer(object):
                     if is_dummy_batch:
                         print("dummy batch!")
 
-                    try:
-                        # forward and backward
-                        loss, sample_size_i, logging_output = self.task.train_step(
-                            sample=sample,
-                            model=self.model,
-                            criterion=self.criterion,
-                            optimizer=self.optimizer,
-                            update_num=self.get_num_updates(),
-                            ignore_grad=is_dummy_batch,
-                        )
-                        del loss
+                    # try:
+                    # forward and backward
+                    loss, sample_size_i, logging_output = self.task.train_step(
+                        sample=sample,
+                        model=self.model,
+                        criterion=self.criterion,
+                        optimizer=self.optimizer,
+                        update_num=self.get_num_updates(),
+                        ignore_grad=is_dummy_batch,
+                    )
+                    del loss
 
-                        logging_outputs.append(logging_output)
-                        sample_size += sample_size_i
-                        nsentences += logging_output['nsentences']
-                    except:
-                        pass
+                    logging_outputs.append(logging_output)
+                    sample_size += sample_size_i
+                    nsentences += logging_output['nsentences']
+                    # except:
+                    #     pass
 
                     # Added by Junxian: manually update lambda (support distributed training)
                     with torch.no_grad():
@@ -357,7 +357,11 @@ class Trainer(object):
                     raise e
 
         if is_dummy_batch:
-            sample_size *= 0.  # multiply by 0 to preserve device
+            if torch.is_tensor(sample_size):
+                sample_size.zero_()
+            else:
+                sample_size *= 0.0
+                
         if torch.is_tensor(sample_size):
             sample_size = sample_size.float()
         else:
