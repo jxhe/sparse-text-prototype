@@ -28,7 +28,7 @@ from .retriever import PrecomputeEmbedRetriever, BertRetriever
 
 @register_model('sparse_prototype')
 class TemplateModel(BaseFairseqModel):
-    def __init__(self, classifier, editor, vae_encoder,
+    def __init__(self, classifier, editor,
         decoder, alpha, cuda, grad_lambda, args):
         super().__init__()
 
@@ -39,7 +39,6 @@ class TemplateModel(BaseFairseqModel):
 
 
         self.editor = editor
-        self.vae_encoder = vae_encoder
 
         self.decoder = decoder
 
@@ -267,80 +266,23 @@ class TemplateModel(BaseFairseqModel):
             pretrained_embed=pretrained_encoder_embed,
         )
 
-        if args.criterion != 'lm_baseline':
-            decoder = LSTMLatentDecoder(
-                dictionary=task.target_dictionary,
-                embed_dim=args.decoder_embed_dim,
-                hidden_size=args.decoder_hidden_size,
-                out_embed_dim=args.decoder_out_embed_dim,
-                nz=args.latent_dim,
-                num_layers=args.decoder_layers,
-                dropout_in=args.decoder_dropout_in,
-                dropout_out=args.decoder_dropout_out,
-                attention=options.eval_bool(args.decoder_attention),
-                encoder_output_units=encoder.output_units,
-                pretrained_embed=pretrained_decoder_embed,
-                share_input_output_embed=args.share_decoder_input_output_embed,
-                adaptive_softmax_cutoff=(
-                    options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
-                    if args.criterion == 'adaptive_loss' else None
-                ),
-                copy=options.eval_bool(args.decoder_copy)
-            )
-        else:
-            decoder = LSTMSkipDecoder(
-                dictionary=task.target_dictionary,
-                embed_dim=args.decoder_embed_dim,
-                hidden_size=args.decoder_hidden_size,
-                out_embed_dim=args.decoder_out_embed_dim,
-                num_layers=args.decoder_layers,
-                dropout_in=args.decoder_dropout_in,
-                dropout_out=args.decoder_dropout_out,
-                attention=False,
-                encoder_output_units=0,
-                pretrained_embed=pretrained_decoder_embed,
-                share_input_output_embed=args.share_decoder_input_output_embed,
-                adaptive_softmax_cutoff=(
-                    options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
-                    if args.criterion == 'adaptive_loss' else None
-                ),
-            )
-
-        # the Inverse Neural Editor q(z|t, x)
-        # if pretrained_editor_embed is None:
-        #     inv_editor = Embedding(len(task.target_dictionary),
-        #         args.inv_editor_embed_dim, task.target_dictionary.padding_idx)
-        # else:
-        #     inv_editor = pretrained_editor_embed
-
-        if args.inv_editor == 'guu':
-            inv_editor = GuuInvEditor(
-                embed_dim=args.encoder_embed_dim,
-                dictionary=task.source_dictionary,
-                pretrained_embed=pretrained_inveditor_embed,
-                cuda=torch.cuda.is_available() and not args.cpu,
-            )
-        elif args.inv_editor == 'levenshtein':
-            inv_editor = LevenshteinInvEditor(
-                token_embed_dim=args.encoder_embed_dim,
-                edit_embed_dim=args.edit_embed_dim,
-                hidden_size=args.encoder_hidden_size,
-                tgt_dict=task.source_dictionary,
-                edit_dict=task.edit_dict,
-                pretrained_token_embed=pretrained_inveditor_embed,
-                )
-        else:
-            raise ValueError('inv editor {} is not supported'.format(args.inv_editor))
-
-        hdim = inv_editor.output_units
-
-        vae_encoder = VAEEncoder(
-            encoder=inv_editor,
-            hidden_dim=hdim,
-            latent_dim=args.latent_dim,
-            dist=args.vae_prior,
-            kappa=args.vmf_kappa,
-            cuda=cuda
+    
+        decoder = LSTMSkipDecoder(
+            dictionary=task.target_dictionary,
+            embed_dim=args.decoder_embed_dim,
+            hidden_size=args.decoder_hidden_size,
+            out_embed_dim=args.decoder_out_embed_dim,
+            num_layers=args.decoder_layers,
+            dropout_in=args.decoder_dropout_in,
+            dropout_out=args.decoder_dropout_out,
+            attention=False if args.criterion == 'lm_baseline' else options.eval_bool(args.decoder_attention),
+            encoder_output_units=0 if args.criterion == 'lm_baseline' else encoder.output_units,
+            pretrained_embed=pretrained_decoder_embed,
+            share_input_output_embed=args.share_decoder_input_output_embed,
+            adaptive_softmax_cutoff=(
+                options.eval_str_list(args.adaptive_softmax_cutoff, type=int)
+                if args.criterion == 'adaptive_loss' else None
+            ),
         )
 
         if args.retriever == 'bert':
@@ -367,7 +309,7 @@ class TemplateModel(BaseFairseqModel):
 
         editor = FairseqEncoderDecoderModel(encoder, decoder)
 
-        return cls(retriever, editor, vae_encoder,
+        return cls(retriever, editor,
             decoder, args.alpha, cuda,
             options.eval_bool(args.grad_lambda), args)
 
@@ -544,14 +486,8 @@ class TemplateModel(BaseFairseqModel):
         else:
             term1 = 0.
 
-        # z: (batch * nsample, nsz, nz)
-        # KLz: (batch * nsample)
-        z, KLz, _ = self.vae_encoder(src_tokens, src_lengths, temp_tokens, temp_lengths, **kwargs)
-        z = z.squeeze(1)
-
         # (batch * nsample, tgt_len, vocab)
-        recon_out = self.editor(temp_tokens, temp_lengths, prev_output_tokens,
-            edit_vector=z, src_t=temp_tokens, src_l=temp_lengths)
+        recon_out = self.editor(temp_tokens, temp_lengths, prev_output_tokens)
 
         # neg_entropy: (batch)
         tmp = F.log_softmax(logits, dim=1)
@@ -566,8 +502,7 @@ class TemplateModel(BaseFairseqModel):
         logq = torch.gather(F.log_softmax(logits, dim=1), dim=1, index=temp_ids_reshape)
 
 
-        res = {"KLz": KLz,
-               "recon_out": recon_out,
+        res = {"recon_out": recon_out,
                "logits": logits,
                "KLtheta": -term1,
                "KLt": neg_entropy - term2,
@@ -771,25 +706,22 @@ class TemplateModel(BaseFairseqModel):
             dim=1, index=temp_ids_reshape)
 
         # (batch * infer_ns, 1, nz) --> (batch * infer_ns, nz)
-        z, KLz, param_dict = self.vae_encoder(src_tokens, src_lengths, temp_tokens, temp_lengths, **kwargs)
-        z = z.squeeze(1)
+        # z, KLz, param_dict = self.vae_encoder(src_tokens, src_lengths, temp_tokens, temp_lengths, **kwargs)
+        # z = z.squeeze(1)
 
-        log_pz = self.vae_encoder.log_prior_vmf_density(z)
-        log_qz = self.vae_encoder.log_vmf_density(z, param_dict['mu'])
+        # log_pz = self.vae_encoder.log_prior_vmf_density(z)
+        # log_qz = self.vae_encoder.log_vmf_density(z, param_dict['mu'])
 
-        # (batch, nsample)
-        log_pz = log_pz.index_select(0, kwargs['revert_order']).view(-1, self.infer_ns)
-        log_qz = log_qz.index_select(0, kwargs['revert_order']).view(-1, self.infer_ns)
+        # # (batch, nsample)
+        # log_pz = log_pz.index_select(0, kwargs['revert_order']).view(-1, self.infer_ns)
+        # log_qz = log_qz.index_select(0, kwargs['revert_order']).view(-1, self.infer_ns)
 
 
         # (batch * nsample, tgt_len, vocab)
-        recon_out = self.editor(temp_tokens, temp_lengths, prev_output_tokens,
-            edit_vector=z, src_t=temp_tokens, src_l=temp_lengths)
+        recon_out = self.editor(temp_tokens, temp_lengths, prev_output_tokens)
 
 
-        res = {"log_pz": log_pz,
-               "recon_out": recon_out,
-               "log_qz": log_qz,
+        res = {"recon_out": recon_out,
                "log_pt": log_pt,
                "log_qt": log_qt,
                }

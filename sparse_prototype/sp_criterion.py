@@ -143,7 +143,6 @@ class SupportPrototypeELBO(LegacyFairseqCriterion):
             'ntokens': sample['ntokens'] / model.infer_ns,
             'nsentences': nsentences,
             'sample_size': sample_size / model.infer_ns,
-            'KLz': utils.item(net_output['KLz'].sum().data / model.infer_ns),
             'KLt': utils.item(net_output['KLt'].sum().data),
             'KLtheta': utils.item(net_output['KLtheta'] * nsentences),
             'lambda_t': model.lambda_t,
@@ -163,16 +162,14 @@ class SupportPrototypeELBO(LegacyFairseqCriterion):
 
         revert_order = sample['net_input']['revert_order']
 
-        KLz = net_output['KLz']
         KLt = net_output['KLt']
         KLtheta = net_output['KLtheta']
         logq = net_output['logq']
 
         nll_loss = nll_loss.index_select(0, revert_order)
         smoothed_nll_loss = smoothed_nll_loss.index_select(0, revert_order)
-        KLz = KLz.index_select(0, revert_order)
 
-        cls_reward = (nll_loss + KLz).detach()
+        cls_reward = nll_loss.detach()
         cls_reward_reshape = cls_reward.view(-1, model.infer_ns)
         # use average reward as the baseline, shape (batch)
         cls_reward = cls_reward_reshape - cls_reward_reshape.mean(dim=1, keepdim=True)
@@ -190,7 +187,7 @@ class SupportPrototypeELBO(LegacyFairseqCriterion):
             smoothed_nll_loss.view(-1, model.infer_ns).mean(1)).sum() + KLtheta * nsentences
         
         with torch.no_grad():
-            neg_elbo = ((nll_loss + KLz).view(-1, model.infer_ns).mean(1) + KLt).sum() + KLtheta * nsentences
+            neg_elbo = (nll_loss.view(-1, model.infer_ns).mean(1) + KLt).sum() + KLtheta * nsentences
 
         return loss, neg_elbo, nll_loss.view(-1, model.infer_ns).mean(1).sum()
 
@@ -204,66 +201,29 @@ class SupportPrototypeELBO(LegacyFairseqCriterion):
         """   
 
         tmp = []
-        new_sample = sample
-        cuda = next(model.parameters()).is_cuda
-        for _ in range(int(iw_nsample / model.infer_ns)):
-            net_output = model.iw_forward(**new_sample['net_input'], data_len=data_len)
+        unit = 5
 
-            # log [p(x, t, z) / q(t, z |x)]
-            # (batch, infer_ns)
-            log_ratio = self._compulte_iw_loss(model, net_output, new_sample, reduce=reduce)
-            tmp.append(log_ratio)
+        assert iw_nsample == model.infer_ns
 
-            sample_orig_cpu = move_to_cpu(sample['sample_orig'])
-            new_sample = retrieve_dataset.collater(sample_orig_cpu)
-            new_sample = prepare_sample(new_sample, cuda=cuda, fp16=self.args.fp16)
+        for i in range(iw_nsample // unit):
+            sub_input = {k: v[i*unit:i+unit] for k,v in sample['net_input'].items()}
+            net_output = model.iw_forward(**sub_input, data_len=data_len)
 
+            # (batch * infer_ns)
+            log_pxt = self._compulte_iw_loss(model, net_output, sample, reduce=reduce)
+            tmp.append(log_pxt)
 
+        log_pxt = torch.cat(tmp, dim=0)
+        revert_order = sample['net_input']['revert_order']
 
-        # (batch)
-        ll_iw = torch.logsumexp(torch.cat(tmp, dim=-1), dim=-1) - math.log(iw_nsample)
-        if self.f_loss is not None:
-            write_loss(ll_iw, sample, model.infer_ns, self.f_loss)
-        ll_iw = -ll_iw.sum()
-
-        sample_size = sample['target'].size(0) if self.args.sentence_avg else sample['ntokens']
-
-        nsentences = sample['target'].size(0) / model.infer_ns
-
-        logging_output = {
-            'nll_iw': utils.item(ll_iw.data) if reduce else ll_iw.data,
-            'ntokens': sample['ntokens'] / model.infer_ns,
-            'nsentences': nsentences,
-            'sample_size': sample_size / model.infer_ns,
-        }
-
-        return ll_iw, sample_size, logging_output
-
-    def iw_eval_new(self, model, sample, data_len, iw_nsample, retrieve_dataset, reduce=True):
-        """Compute the importance-weighted loss for the given sample.
-
-        Returns a tuple with three elements:
-        1) the loss
-        2) the sample size, which is used as the denominator for the gradient
-        3) logging outputs to display while training
-        """   
-
-        tmp = []
-        for _ in range(int(iw_nsample / model.infer_ns)):
-            net_output = model.iw_forward(**sample['net_input'], data_len=data_len)
-
-            # log [p(x, t, z) / q(t, z |x)]
-            # (batch, infer_ns)
-            log_ratio = self._compulte_iw_loss(model, net_output, sample, reduce=reduce)
-            tmp.append(log_ratio.unsqueeze(-1))
-
-        tmp_cat = torch.cat(tmp, dim=-1)
+        assert log_pxt.size(0) == revert_order.size(0)
 
         # (batch, infer_ns)
-        ll_iw_z = torch.logsumexp(tmp_cat, dim=-1) - math.log(tmp_cat.size(-1))
+        log_pxt = log_pxt.index_select(0, revert_order).view(-1, model.infer_ns)
+
 
         # (batch)
-        ll_iw = torch.logsumexp(net_output['log_pt'] + ll_iw_z, dim=1)
+        ll_iw = torch.logsumexp(net_output['log_pt'] + log_pxt, dim=1)
         
         if self.f_loss is not None:
             write_loss(ll_iw, sample, model.infer_ns, self.f_loss)
@@ -292,17 +252,15 @@ class SupportPrototypeELBO(LegacyFairseqCriterion):
             lprobs, target, self.eps, ignore_index=self.padding_idx, reduce=reduce,
         )
 
-        revert_order = sample['net_input']['revert_order']
+        # revert_order = sample['net_input']['revert_order']
 
         # (batch, infer_ns)
-        log_pxtz = -nll_loss.index_select(0, revert_order).view(-1, model.infer_ns)
+        # log_pxtz = -nll_loss.index_select(0, revert_order).view(-1, model.infer_ns)
+        log_pxtz = -nll_loss
 
         # log_ratio = net_output['log_pz'] + net_output['log_pt'] + log_pxtz \
         #             - net_output['log_qz'] - net_output['log_qt'] 
-        log_ratio = net_output['log_pz'] + log_pxtz \
-                    - net_output['log_qz'] 
-
-        return log_ratio
+        return log_pxtz
 
     def entropy_eval(self, model, sample, data_len, reduce=True):
         """Compute the importance-weighted loss for the given sample.
@@ -338,7 +296,6 @@ class SupportPrototypeELBO(LegacyFairseqCriterion):
         ntokens = sum(log.get('ntokens', 0) for log in logging_outputs)
         sample_size = sum(log.get('sample_size', 0) for log in logging_outputs)
         nsentences = sum(log.get('nsentences', 0) for log in logging_outputs)
-        KLz_sum = sum(log.get('KLz', 0) for log in logging_outputs)
         KLt_sum = sum(log.get('KLt', 0) for log in logging_outputs)
         KLtheta_sum = sum(log.get('KLtheta', 0) for log in logging_outputs)
 
@@ -368,7 +325,6 @@ class SupportPrototypeELBO(LegacyFairseqCriterion):
             metrics.log_scalar('recon_loss_t', recon_loss_sum / ntokens / math.log(2), 
                 ntokens, round=3, priority=5)
 
-            metrics.log_scalar('KLz', KLz_sum / nsentences, nsentences, round=1, priority=8)
             metrics.log_scalar('KLt', KLt_sum / nsentences, nsentences, round=1, priority=8)
             metrics.log_scalar('KLtheta', KLtheta_sum / nsentences, nsentences, round=1, priority=8)
 

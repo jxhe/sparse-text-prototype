@@ -383,7 +383,7 @@ class SparsePrototypeTask(TranslationTask):
         model.eval()
         with torch.no_grad():
             if mode == 'iw':
-                loss, sample_size, logging_output = criterion.iw_eval_new(model, sample, 0, self.args.iw_nsamples,
+                loss, sample_size, logging_output = criterion.iw_eval(model, sample, 0, self.args.iw_nsamples,
                     retrieve_dataset=self.datasets[self.args.valid_subset])
             elif mode == 'entropy':
                 loss, sample_size, logging_output = criterion.entropy_eval(model, sample, 0)
