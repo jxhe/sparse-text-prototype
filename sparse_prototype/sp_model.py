@@ -42,12 +42,15 @@ class TemplateModel(BaseFairseqModel):
 
         self.decoder = decoder
 
-        template_group = load_dataset('csv',
-                                      data_files=f'{args.emb_dataset_file}.template.csv.gz',
-                                      cache_dir='hf_dataset_cache')
+        if args.criterion == 'lm_baseline':
+            self.num_class = 1
+        else:
+            template_group = load_dataset('csv',
+                                          data_files=f'{args.emb_dataset_file}.template.csv.gz',
+                                          cache_dir='hf_dataset_cache')
 
-        template_group = template_group['train']
-        self.num_class = len(template_group)
+            template_group = template_group['train']
+            self.num_class = len(template_group)
 
         self.device = torch.device('cuda' if cuda else 'cpu')
 
@@ -284,6 +287,11 @@ class TemplateModel(BaseFairseqModel):
                 if args.criterion == 'adaptive_loss' else None
             ),
         )
+
+        if args.criterion == 'lm_baseline':
+            return cls(None, None,
+                decoder, args.alpha, cuda,
+                options.eval_bool(args.grad_lambda), args)
 
         if args.retriever == 'bert':
             retriever = BertRetriever(
@@ -869,238 +877,6 @@ class AttentionLayer(nn.Module):
         return x, attn_scores, torch.cat((x, input), dim=1)
 
 
-class LSTMLatentDecoder(FairseqIncrementalDecoder):
-    """LSTM decoder with latent variable and copy mechanism"""
-    def __init__(
-        self, dictionary, embed_dim=512, hidden_size=512, out_embed_dim=512,
-        nz=128, num_layers=1, dropout_in=0.1, dropout_out=0.1, attention=True,
-        encoder_output_units=512, pretrained_embed=None,
-        share_input_output_embed=False, adaptive_softmax_cutoff=None,
-        copy=True,
-    ):
-        super().__init__(dictionary)
-        self.dropout_in = dropout_in
-        self.dropout_out = dropout_out
-        self.hidden_size = hidden_size
-        self.share_input_output_embed = share_input_output_embed
-        self.need_attn = True
-
-        self.adaptive_softmax = None
-        num_embeddings = len(dictionary)
-        padding_idx = dictionary.pad()
-        if pretrained_embed is None:
-            self.embed_tokens = Embedding(num_embeddings, embed_dim, padding_idx)
-        else:
-            self.embed_tokens = pretrained_embed
-
-        self.encoder_output_units = encoder_output_units
-        if (encoder_output_units + nz) != hidden_size:
-            self.encoder_hidden_proj = Linear(encoder_output_units + nz, hidden_size)
-            self.encoder_cell_proj = Linear(encoder_output_units + nz, hidden_size)
-        else:
-            self.encoder_hidden_proj = self.encoder_cell_proj = None
-        self.layers = nn.ModuleList([
-            LSTMCell(
-                input_size=hidden_size + embed_dim + nz if layer == 0 else hidden_size,
-                hidden_size=hidden_size,
-            )
-            for layer in range(num_layers)
-        ])
-        if attention:
-            # TODO make bias configurable
-            self.attention = AttentionLayer(hidden_size, encoder_output_units, hidden_size, bias=False)
-        else:
-            self.attention = None
-        if hidden_size != out_embed_dim:
-            self.additional_fc = Linear(hidden_size, out_embed_dim)
-        if adaptive_softmax_cutoff is not None:
-            # setting adaptive_softmax dropout to dropout_out for now but can be redefined
-            self.adaptive_softmax = AdaptiveSoftmax(num_embeddings, hidden_size, adaptive_softmax_cutoff,
-                                                    dropout=dropout_out)
-        elif not self.share_input_output_embed:
-            self.fc_out = Linear(out_embed_dim, num_embeddings, dropout=dropout_out)
-
-        if copy:
-            self.gen_logits = Linear(embed_dim + 2 * hidden_size + nz, 2)
-        else:
-            self.gen_logits = None
-
-    def forward(self, prev_output_tokens, encoder_out=None, edit_vector=None,
-                src_t=None, src_l=None, incremental_state=None):
-        """
-        z (Tensor): latent vector of shape `(batch, nz)`
-        """
-        x, attn_scores = self.extract_features(
-            prev_output_tokens, encoder_out, edit_vector, src_t, src_l,
-            incremental_state
-        )
-        return x, attn_scores
-
-    def extract_features(
-        self, prev_output_tokens, encoder_out, edit_vector, src_t, src_l,
-        incremental_state=None
-    ):
-        """
-        Similar to *forward* but only return features.
-        """
-        encoder_padding_mask = encoder_out['encoder_padding_mask']
-        encoder_out = encoder_out['encoder_out']
-
-        if incremental_state is not None:
-            prev_output_tokens = prev_output_tokens[:, -1:]
-        bsz, seqlen = prev_output_tokens.size()
-
-        # get outputs from encoder
-        encoder_outs, encoder_hiddens, encoder_cells = encoder_out[:3]
-        srclen = encoder_outs.size(0)
-
-        # embed tokens
-        x = self.embed_tokens(prev_output_tokens)
-        x = F.dropout(x, p=self.dropout_in, training=self.training)
-
-        # concatenate z with input word embeddings
-        # (B, T, C ) -> (B, T, C+nz)
-        edit_vector_e = edit_vector.unsqueeze(1).expand(-1, seqlen, -1)
-        x = torch.cat((x, edit_vector_e), dim=-1)
-
-        # B x T x (C+nz) -> T x B x (C+nz)
-        x = x.transpose(0, 1)
-
-        # initialize previous states (or get from cache during incremental generation)
-        cached_state = utils.get_incremental_state(self, incremental_state, 'cached_state')
-        if cached_state is not None:
-            prev_hiddens, prev_cells, input_feed = cached_state
-        else:
-            num_layers = len(self.layers)
-            prev_hiddens = [torch.cat((encoder_hiddens[i], edit_vector), dim=-1) for i in range(num_layers)]
-            prev_cells = [torch.cat((encoder_cells[i], edit_vector), dim=-1) for i in range(num_layers)]
-            if self.encoder_hidden_proj is not None:
-                prev_hiddens = [self.encoder_hidden_proj(p) for p in prev_hiddens]
-                prev_cells = [self.encoder_cell_proj(p) for p in prev_cells]
-            input_feed = x.new_zeros(bsz, self.hidden_size)
-
-        attn_scores = x.new_zeros(srclen, seqlen, bsz)
-        outs = []
-        hidden_atts = []
-        for j in range(seqlen):
-            # input feeding: concatenate context vector from previous time step
-            input = torch.cat((x[j, :, :], input_feed), dim=1)
-
-            for i, rnn in enumerate(self.layers):
-                # recurrent cell
-                hidden, cell = rnn(input, (prev_hiddens[i], prev_cells[i]))
-
-                # hidden state becomes the input to the next layer
-                pre_input = F.dropout(hidden, p=self.dropout_out, training=self.training)
-
-                # skip connection
-                if i == 0:
-                    input = pre_input
-                    out = hidden
-                else:
-                    input = pre_input + input
-                    out = hidden + input
-
-                # save state for next time step
-                prev_hiddens[i] = hidden
-                prev_cells[i] = cell
-
-            # apply attention using the last layer's hidden state
-            if self.attention is not None:
-                out, attn_scores[:, j, :], hidden_att = self.attention(out, encoder_outs, encoder_padding_mask)
-            else:
-                out = out
-            out = F.dropout(out, p=self.dropout_out, training=self.training)
-
-            # input feeding
-            input_feed = out
-
-            # save final output
-            outs.append(out)
-
-            if self.gen_logits is not None:
-                hidden_atts.append(hidden_att)
-
-        # cache previous states (no-op except during incremental generation)
-        utils.set_incremental_state(
-            self, incremental_state, 'cached_state',
-            (prev_hiddens, prev_cells, input_feed),
-        )
-
-        # (seqlen, bsz, hidden_size + encode_output_units)
-        # --> (seq_len, bsz, hidden_size +encode_output_units + embed_dim + nz)
-        # --> (seq_len, bsz, 2) --> (bsz, seq_len, [gen, copy])
-        if self.gen_logits is not None:
-            hidden_atts = torch.cat(hidden_atts, dim=0).view(seqlen, bsz, -1)
-            pre_gen = torch.cat((hidden_atts, x), dim=-1)
-            logp_gen = F.log_softmax(self.gen_logits(pre_gen), dim=-1)
-            logp_gen = logp_gen.transpose(0, 1)
-
-        # collect outputs across time steps
-        x = torch.cat(outs, dim=0).view(seqlen, bsz, self.hidden_size)
-
-        # T x B x C -> B x T x C
-        x = x.transpose(1, 0)
-
-        if hasattr(self, 'additional_fc') and self.adaptive_softmax is None:
-            x = self.additional_fc(x)
-            x = F.dropout(x, p=self.dropout_out, training=self.training)
-
-        # B X T X V
-        x = self.output_layer(x)
-
-        # srclen x tgtlen x bsz -> bsz x tgtlen x srclen
-        attn_scores = attn_scores.transpose(0, 2)
-
-        # copy
-        if self.gen_logits is not None:
-            copy_logp = x.new_zeros(x.size())
-            src_t = src_t.unsqueeze(1).expand(-1, seqlen, -1)
-            copy_logp.scatter_add_(-1, src_t, attn_scores)
-            copy_logp = torch.log(copy_logp + 1e-15)
-
-            copy_logp = logp_gen[:, :, 1].unsqueeze(-1) + copy_logp
-            gen_logp = logp_gen[:, :, 0].unsqueeze(-1) + F.log_softmax(x, dim=-1)
-
-            x = torch.logsumexp(torch.stack((copy_logp, gen_logp), dim=0), dim=0)
-
-
-        if not self.training and self.need_attn:
-            pass
-        else:
-            attn_scores = None
-
-        return x, attn_scores
-
-    def output_layer(self, x):
-        """Project features to the vocabulary size."""
-        if self.adaptive_softmax is None:
-            if self.share_input_output_embed:
-                x = F.linear(x, self.embed_tokens.weight)
-            else:
-                x = self.fc_out(x)
-        return x
-
-    def reorder_incremental_state(self, incremental_state, new_order):
-        super().reorder_incremental_state(incremental_state, new_order)
-        cached_state = utils.get_incremental_state(self, incremental_state, 'cached_state')
-        if cached_state is None:
-            return
-
-        def reorder_state(state):
-            if isinstance(state, list):
-                return [reorder_state(state_i) for state_i in state]
-            return state.index_select(0, new_order)
-
-        new_state = tuple(map(reorder_state, cached_state))
-        utils.set_incremental_state(self, incremental_state, 'cached_state', new_state)
-
-    def max_positions(self):
-        """Maximum output length supported by the decoder."""
-        return int(1e5)  # an arbitrary large number
-
-    def make_generation_fast_(self, need_attn=False, **kwargs):
-        self.need_attn = need_attn
 
 class LSTMSkipDecoder(LSTMDecoder):
     """LSTMDecoder with skip connections between layers"""
@@ -1315,6 +1091,40 @@ def yelp_architecture(args):
 @register_model_architecture('sparse_prototype', 'yelp_large')
 def yelp_large_architecture(args):
     yelp_architecture(args)
+
+# small
+@register_model_architecture('sparse_prototype', 'yelp_large_s')
+def yelp_large_s_architecture(args):
+    args.encoder_embed_dim = getattr(args, 'encoder_embed_dim', 300)
+    args.encoder_hidden_size = getattr(args, 'encoder_hidden_size', 256)
+    args.encoder_layers = getattr(args, 'encoder_layers', 2)
+    args.encoder_dropout_in = getattr(args, 'encoder_dropout_in', 0.)
+    args.encoder_dropout_out = getattr(args, 'encoder_dropout_out', 0.)
+    args.decoder_embed_dim = getattr(args, 'decoder_embed_dim', 300)
+    args.decoder_hidden_size = getattr(args, 'decoder_hidden_size', 256)
+    args.decoder_layers = getattr(args, 'decoder_layers', 2)
+    args.decoder_out_embed_dim = getattr(args, 'decoder_out_embed_dim', args.decoder_hidden_size)
+    args.decoder_dropout_in = getattr(args, 'decoder_dropout_in', 0.)
+    args.decoder_dropout_out = getattr(args, 'decoder_dropout_out', 0.)
+
+    base_architecture(args)
+
+# xs
+@register_model_architecture('sparse_prototype', 'yelp_large_xs')
+def yelp_large_xs_architecture(args):
+    args.encoder_embed_dim = getattr(args, 'encoder_embed_dim', 300)
+    args.encoder_hidden_size = getattr(args, 'encoder_hidden_size', 128)
+    args.encoder_layers = getattr(args, 'encoder_layers', 1)
+    args.encoder_dropout_in = getattr(args, 'encoder_dropout_in', 0.)
+    args.encoder_dropout_out = getattr(args, 'encoder_dropout_out', 0.)
+    args.decoder_embed_dim = getattr(args, 'decoder_embed_dim', 300)
+    args.decoder_hidden_size = getattr(args, 'decoder_hidden_size', 128)
+    args.decoder_layers = getattr(args, 'decoder_layers', 1)
+    args.decoder_out_embed_dim = getattr(args, 'decoder_out_embed_dim', args.decoder_hidden_size)
+    args.decoder_dropout_in = getattr(args, 'decoder_dropout_in', 0.)
+    args.decoder_dropout_out = getattr(args, 'decoder_dropout_out', 0.)
+
+    base_architecture(args)
 
 
 @register_model_architecture('sparse_prototype', 'coco40k')

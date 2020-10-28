@@ -17,6 +17,7 @@ inv_editor='levenshtein'
 edit_embed_dim=10
 retrieve_split=valid1
 criterion="sp_elbo"
+arch=${data_bin}
 
 glove_path=glove_embeddings/${data_bin}_glove.txt
 emb_dataset_file=precompute_embedding_datasets/${data_bin}/${data_bin}.${emb_type}
@@ -52,7 +53,7 @@ prune_num="-1"
 valid_subset="test" # use "valid" to test on valid set
 iw_nsamples=1000
 
-while getopts ":g:a:p:k:r:f:c:u:e:" arg; do
+while getopts ":g:a:p:k:r:f:c:u:e:d:s:" arg; do
   case $arg in
     g) GPU="$OPTARG"
     ;;
@@ -71,6 +72,10 @@ while getopts ":g:a:p:k:r:f:c:u:e:" arg; do
     u) prune_num="$OPTARG"
     ;;
     e) eval_mode="$OPTARG"
+    ;;
+    d) data_bin="$OPTARG"
+    ;;
+    s) arch="$OPTARG"
     ;;
     \?) echo "Invalid option -$OPTARG" >&2
     ;;
@@ -104,13 +109,16 @@ then
     ns=10
 elif [ "$data_bin" = "yelp_large" ];
 then
-    max_tokens=2048 # distributed on two gpus
+    max_tokens=8192 # distributed on two gpus
     save_interval_updates=5000
-    warmup_updates=150000
-    max_update=500000
+    warmup_updates=5000
+    max_update=300000
+    lr=0.005
+    update_freq=2
+    warmup_init_lr=${lr}
     kappa=40
     lambda_config="0:0,150000:1"
-    log_interval=100
+    log_interval=10
     validate_interval=1000
     ns=10
 else
@@ -163,7 +171,7 @@ then
     SAVE=${LOADDIR}
     TENSORBOARD=${SAVE}/tensorboard
 else
-    SAVE_ROOT="checkpoint/${data_bin}/${DATE}/${data_bin}_${opt}_noeditvec_alpha${alpha}_kappa${kappa}"
+    SAVE_ROOT="checkpoint/${data_bin}/${DATE}/${data_bin}_arch.${arch}_${opt}_noeditvec_alpha${alpha}_kappa${kappa}"
     SAVE_ROOT="${SAVE_ROOT}_ns${ns}"
     SAVE_ROOT="${SAVE_ROOT}_editdim${edit_embed_dim}"
     SAVE_ROOT="${SAVE_ROOT}_rtr${retriever}_fr${forget_rate}_dr${decay_rate}_rf${rescale_factor}_fb${free_bits}"
@@ -182,7 +190,7 @@ fi
 
 CUDA_VISIBLE_DEVICES=${GPU} python train.py \
     data-bin/${data_bin} \
-    --arch ${data_bin} --task sparse_prototype \
+    --arch ${arch} --task sparse_prototype \
     --optimizer ${opt} --adam-betas '(0.9, 0.98)' \
     --lr ${lr} --lr-scheduler inverse_sqrt --warmup-updates ${warmup_updates} \
     --warmup-init-lr ${warmup_init_lr} \

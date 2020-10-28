@@ -167,6 +167,34 @@ class SparsePrototypeTask(TranslationTask):
 
     def load_dataset(self, split, epoch=0, **kwargs):
 
+        if self.args.criterion == 'lm_baseline':
+            paths = self.args.data.split(os.pathsep)
+            assert len(paths) > 0
+            data_path = paths[epoch % len(paths)]
+            split_path = os.path.join(data_path, split)
+
+            dataset = data_utils.load_indexed_dataset(
+                split_path, self.dictionary, self.args.dataset_impl
+            )
+
+            if dataset is None:
+                raise FileNotFoundError(
+                    "Dataset not found: {} ({})".format(split, split_path)
+                )
+
+            self.datasets[split] = LanguagePairDataset(
+                dataset,
+                dataset.sizes,
+                self.src_dict,
+                dataset,
+                dataset.sizes,
+                self.src_dict,
+                left_pad_source=self.args.left_pad_source,
+                left_pad_target=self.args.left_pad_target,
+                )
+
+            return
+
         if self.retrieve_fn is None:
             self.build_model(self.args)
             # raise ValueError(
@@ -341,10 +369,13 @@ class SparsePrototypeTask(TranslationTask):
 
     # to support distributed training
     def collect_lambda_stats(self, model, sample):
+        if self.args.criterion == 'lm_baseline':
+            return 0
+
         return F.softmax(sample['net_input']['logits'], dim=1).sum(0)
 
     def distributed_update_lambda(self, model, lambda_stats_sum, nsentences, update_num, ignore_grad=False):
-        if ignore_grad:
+        if ignore_grad or self.args.criterion == 'lm_baseline':
             return
 
         forget = math.pow(update_num + self.decay_rate, -self.forget_rate)
@@ -432,6 +463,9 @@ class SparsePrototypeTask(TranslationTask):
         self.retrieve_pool.reset_index_map()
 
     def write_lambda(self, fout, model):
+        if self.args.criterion == 'lm_baseline':
+            return
+
         fout.write('-------------top templates by q(theta)-------------\n')
         lambda_ = model.lambda_
         prob = lambda_ / lambda_.sum()
@@ -444,6 +478,10 @@ class SparsePrototypeTask(TranslationTask):
         fout.write('\n---------------------------------\n')
 
     def write_template(self, sample, model, fout):
+        if self.args.criterion == 'lm_baseline':
+            return
+
+            
         if sample is None or len(sample) == 0:
             return
 
