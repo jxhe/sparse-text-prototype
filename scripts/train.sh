@@ -9,7 +9,7 @@
 DATE=`date +%Y%m%d`
 
 # general configuration
-data_bin="coco40k"
+data_bin="yelp_large"
 emb_type="bert"
 kappa=30
 copy=0  # whether to have copy mechanism in the decoder
@@ -50,7 +50,7 @@ GPU=0
 eval_mode="none"  # perform training by default
 prune_num="-1"
 valid_subset="test" # use "valid" to test on valid set
-iw_nsamples=100
+iw_nsamples=1000
 
 while getopts ":g:a:p:k:r:f:c:u:e:" arg; do
   case $arg in
@@ -77,17 +77,6 @@ while getopts ":g:a:p:k:r:f:c:u:e:" arg; do
   esac
 done
 
-
-if [ "$eval_mode" = "none" ];
-then
-    stdout="stdout.log"
-    eval_params="--eval-mode none"
-else
-    stdout="eval_${valid_subset}_${eval_mode}_prune${prune_num}.log"
-    eval_params="--eval-mode ${eval_mode} --iw-nsamples ${iw_nsamples} \
-    --valid-subset ${valid_subset} --prune-num ${prune_num} \
-    --reset-meters --reset-optimizer --write-loss-path loss_per_sent_${valid_subset}.txt"
-fi
 
 if [ "$criterion" = "topk_elbo" ];
 then
@@ -129,6 +118,17 @@ else
     save_interval_updates=0
     warmup_updates=0
     ns=0
+fi
+
+if [ "$eval_mode" = "none" ];
+then
+    stdout="stdout.log"
+    eval_params="--eval-mode none"
+else
+    stdout="eval_${valid_subset}_${eval_mode}_prune${prune_num}.log"
+    eval_params="--eval-mode ${eval_mode} --iw-nsamples ${iw_nsamples} \
+    --valid-subset ${valid_subset} --prune-num ${prune_num} \
+    --reset-meters --reset-optimizer --write-loss-path loss_per_sent_${valid_subset}.txt"
 fi
 
 

@@ -200,23 +200,36 @@ class SupportPrototypeELBO(LegacyFairseqCriterion):
         3) logging outputs to display while training
         """   
 
+        unit = 20
+        bsz = sample['net_input']['src_tokens'].size(0)
+
+        slices = bsz // (iw_nsample // unit)
+
         tmp = []
-        unit = 5
-
-        assert iw_nsample == model.infer_ns
-
         for i in range(iw_nsample // unit):
-            sub_input = {k: v[i*unit:i+unit] for k,v in sample['net_input'].items()}
+
+            sub_input = {k: v[i * slices: i * slices + slices] \
+                         if 'tokens' in k or 'lengths' in k else v \
+                         for k, v in sample['net_input'].items()}
+            
+            # assume left-paddingg which is default
+            sub_input['temp_tokens'] = \
+                sub_input['temp_tokens'][:, sub_input['temp_tokens'].size(1) - sub_input['temp_lengths'][0].item():]
+
             net_output = model.iw_forward(**sub_input, data_len=data_len)
 
+            sub_target = {'target': sample['target'][i * slices: i * slices + slices]}
             # (batch * infer_ns)
-            log_pxt = self._compulte_iw_loss(model, net_output, sample, reduce=reduce)
+            log_pxt = self._compulte_iw_loss(model, net_output, sub_target, reduce=reduce)
+
             tmp.append(log_pxt)
 
         log_pxt = torch.cat(tmp, dim=0)
+
+        # log_pxt = torch.cat(tmp, dim=0)
         revert_order = sample['net_input']['revert_order']
 
-        assert log_pxt.size(0) == revert_order.size(0)
+        # assert log_pxt.size(0) == revert_order.size(0)
 
         # (batch, infer_ns)
         log_pxt = log_pxt.index_select(0, revert_order).view(-1, model.infer_ns)

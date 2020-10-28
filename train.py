@@ -320,6 +320,10 @@ def validate_iw(args, trainer, task, epoch_itr, subsets, prune=-1, mode='iw'):
     # top k instead of sampling to approximate sum of prototypes for evaluation
     for subset in subsets:
         task.dataset(subset).set_sampling(False)
+        task.dataset(subset).set_num_samples(args.iw_nsamples)
+
+    trainer.get_model().set_num_samples(args.iw_nsamples)
+
 
     if args.fixed_validation_seed is not None:
         # set fixed seed for every validation

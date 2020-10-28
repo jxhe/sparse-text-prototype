@@ -398,6 +398,9 @@ class TemplateModel(BaseFairseqModel):
         """Maximum length supported by the decoder."""
         return self.editor.max_decoder_positions()
 
+    def set_num_samples(self, val):
+        self.args.infer_ns = val
+
     @property
     def infer_ns(self):
         return self.args.infer_ns
@@ -702,8 +705,8 @@ class TemplateModel(BaseFairseqModel):
 
         # (batch, nsample)
         log_pt = torch.index_select(torch.log(theta), dim=0, index=temp_ids).view(-1, self.infer_ns)
-        log_qt = torch.gather(F.log_softmax(logits, dim=1),
-            dim=1, index=temp_ids_reshape)
+        # log_qt = torch.gather(F.log_softmax(logits, dim=1),
+        #     dim=1, index=temp_ids_reshape)
 
         # (batch * infer_ns, 1, nz) --> (batch * infer_ns, nz)
         # z, KLz, param_dict = self.vae_encoder(src_tokens, src_lengths, temp_tokens, temp_lengths, **kwargs)
@@ -723,7 +726,6 @@ class TemplateModel(BaseFairseqModel):
 
         res = {"recon_out": recon_out,
                "log_pt": log_pt,
-               "log_qt": log_qt,
                }
 
         return res

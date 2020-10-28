@@ -335,6 +335,9 @@ class RetrievePrototypeDataset(FairseqDataset):
     def set_sampling(self, val):
         self.sampling = val
 
+    def set_num_samples(self, val):
+        self.num_samples = val
+
     def wrap_collate(self, samples):
         return lang_pair_collate(
             samples, pad_idx=self.tgt_dict.pad(),

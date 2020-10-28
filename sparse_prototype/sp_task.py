@@ -153,10 +153,11 @@ class SparsePrototypeTask(TranslationTask):
 
         print('| [{}] dictionary: {} types'.format(args.source_lang, len(src_dict)))
 
-        if args.inv_editor == 'levenshtein':
-            edit_dict = RetrievePrototypeDataset.get_edit_dict()
-        else:
-            edit_dict = None
+        # if args.inv_editor == 'levenshtein':
+        #     edit_dict = RetrievePrototypeDataset.get_edit_dict()
+        # else:
+        #     edit_dict = None
+        edit_dict = None
 
         if edit_dict is not None:
             print('| [edit] dictionary: {} types'.format(len(edit_dict)))
