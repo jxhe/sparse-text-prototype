@@ -118,7 +118,7 @@ then
     warmup_init_lr=${lr}
     kappa=40
     lambda_config="0:0,150000:1"
-    log_interval=10
+    log_interval=100
     validate_interval=1000
     ns=10
 else
