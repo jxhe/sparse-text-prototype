@@ -10,7 +10,7 @@ DATE=`date +%Y%m%d`
 
 # general configuration
 data_bin="yelp_large"
-emb_type="bert"
+emb_type="sentbert"
 kappa=30
 copy=0  # whether to have copy mechanism in the decoder
 inv_editor='levenshtein'
@@ -79,11 +79,6 @@ while getopts ":g:a:p:k:r:f:c:u:e:d:s:" arg; do
   esac
 done
 
-arch=${data_bin}
-
-glove_path=glove_embeddings/${data_bin}_glove.txt
-emb_dataset_file=precompute_embedding_datasets/${data_bin}/${data_bin}.${emb_type}
-
 
 if [ "$criterion" = "topk_elbo" ];
 then
@@ -123,6 +118,7 @@ then
     log_interval=5
     validate_interval=1000
     retriever='sentbert'
+    emb_type='sentbert'
     ns=10
 else
     max_tokens=0
@@ -130,6 +126,11 @@ else
     warmup_updates=0
     ns=0
 fi
+
+arch=${data_bin}
+
+glove_path=glove_embeddings/${data_bin}_glove.txt
+emb_dataset_file=precompute_embedding_datasets/${data_bin}/${data_bin}.${emb_type}
 
 if [ "$eval_mode" = "none" ];
 then
