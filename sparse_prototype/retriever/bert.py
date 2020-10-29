@@ -13,7 +13,7 @@ class BertRetriever(nn.Module):
     """the retriever module based on pretrained sentence-Bert embeddings"""
     def __init__(self, dictionary, emb_dataset_path,
         rescale=1., linear_bias=False, stop_grad=False, 
-        freeze=False, cuda=True):
+        freeze=False, cuda=True, sentbert=False):
 
         super(BertRetriever, self).__init__()
 
@@ -43,11 +43,10 @@ class BertRetriever(nn.Module):
         self.linear2 = nn.Linear(nfeat, num_template, bias=linear_bias)
 
         # this should be consistent with pre-saved template embeddings
-        MODELS = [BertModel, BertTokenizer, 'bert-base-uncased']
-        model_class, tokenizer_class, pretrained_weights = MODELS
+        model_name = 'bert-base-uncased' if not sentbert else 'sentence-transformers/bert-base-nli-mean-tokens'
 
-        self.encoder = model_class.from_pretrained(pretrained_weights)
-        self.tokenizer = tokenizer_class.from_pretrained(pretrained_weights)
+        self.encoder = AutoModel.from_pretrained(model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
 
         if stop_grad:
             for param in self.encoder.parameters():
@@ -73,9 +72,10 @@ class BertRetriever(nn.Module):
         self.prune_linear2_weight = None
 
 
-    def encode(self, batches):
+    def encode(self, batches, maxlen=500):
         features = self.tokenizer.batch_encode_plus(batches, padding=True,
-            return_attention_mask=True, return_token_type_ids=True, return_tensors='pt')
+            return_attention_mask=True, return_token_type_ids=True, 
+            truncation=True, max_length=maxlen, return_tensors='pt')
         attention_mask = features['attention_mask'].to(self.device)
         input_ids = features['input_ids'].to(self.device)
         token_type_ids= features['token_type_ids'].to(self.device)

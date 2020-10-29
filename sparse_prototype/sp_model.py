@@ -133,7 +133,7 @@ class TemplateModel(BaseFairseqModel):
         parser.add_argument('--inveditor-embed-path', type=str, metavar='STR',
                             help='path to pre-trained encoder embedding')
         parser.add_argument('--retriever', type=str, metavar='STR',
-                            choices=['precompute_emb', 'bert'],
+                            choices=['precompute_emb', 'bert', 'sentbert'],
                             help='the retrieve module')
         parser.add_argument('--grad-lambda', type=str, metavar='BOOL',
                             help='if update lambda with gradient descent')
@@ -293,7 +293,7 @@ class TemplateModel(BaseFairseqModel):
                 decoder, args.alpha, cuda,
                 options.eval_bool(args.grad_lambda), args)
 
-        if args.retriever == 'bert':
+        if args.retriever == 'bert' or args.retriever == 'sentbert':
             retriever = BertRetriever(
                 dictionary=task.target_dictionary,
                 emb_dataset_path=args.emb_dataset_file,
@@ -302,6 +302,7 @@ class TemplateModel(BaseFairseqModel):
                 stop_grad=options.eval_bool(args.stop_bert_grad),
                 freeze=options.eval_bool(args.freeze_retriever),
                 cuda=cuda,
+                sentbert=False if args.retriever == 'bert' else True,
                 )
         elif args.retriever == 'precompute_emb':
             retriever = PrecomputeEmbedRetriever(

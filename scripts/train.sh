@@ -17,20 +17,17 @@ inv_editor='levenshtein'
 edit_embed_dim=10
 retrieve_split=valid1
 criterion="sp_elbo"
-arch=${data_bin}
-
-glove_path=glove_embeddings/${data_bin}_glove.txt
-emb_dataset_file=precompute_embedding_datasets/${data_bin}/${data_bin}.${emb_type}
 
 # optimization hyperparameters
 warmup_init_lr='1e-03'
 lr=0.001
 max_update=30000
-retriever=precompute_emb
+# retriever=precompute_emb
+retriever=bert
 linear_bias=0
 weight_decay=0.0001
 stop_bert_grad=1
-freeze_retriever=0
+freeze_retriever=1
 reinforce=1
 opt=adam
 update_freq=1
@@ -82,6 +79,11 @@ while getopts ":g:a:p:k:r:f:c:u:e:d:s:" arg; do
   esac
 done
 
+arch=${data_bin}
+
+glove_path=glove_embeddings/${data_bin}_glove.txt
+emb_dataset_file=precompute_embedding_datasets/${data_bin}/${data_bin}.${emb_type}
+
 
 if [ "$criterion" = "topk_elbo" ];
 then
@@ -110,7 +112,7 @@ then
 elif [ "$data_bin" = "yelp_large" ];
 then
     max_tokens=1024
-    save_interval_updates=5000
+    save_interval_updates=10
     warmup_updates=5000
     max_update=300000
     lr=0.005
@@ -118,9 +120,9 @@ then
     warmup_init_lr=${lr}
     kappa=40
     lambda_config="0:0,150000:1"
-    log_interval=100
+    log_interval=5
     validate_interval=1000
-    retriever='bert'
+    retriever='sentbert'
     ns=10
 else
     max_tokens=0
