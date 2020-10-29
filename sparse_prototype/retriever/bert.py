@@ -1,4 +1,5 @@
-import h5py
+# import h5py
+import json
 
 import torch
 import torch.nn as nn
@@ -6,6 +7,7 @@ import torch.nn.functional as F
 
 from transformers import *
 from fairseq import utils
+from datasets import load_dataset
 
 class BertRetriever(nn.Module):
     """the retriever module based on pretrained sentence-Bert embeddings"""
@@ -19,18 +21,22 @@ class BertRetriever(nn.Module):
         self.stop_grad = stop_grad
         self.device = torch.device("cuda" if cuda else "cpu")
 
-        dataset = h5py.File(emb_dataset_path, 'r') 
-        template_group = dataset['template']
+        template_group = load_dataset('csv',
+                                      data_files=f'{emb_dataset_path}.template.csv.gz',
+                                      cache_dir='hf_dataset_cache')
+
+        template_group = template_group['train']
+
         num_template = len(template_group)
         template_weight = []
 
         for i in range(num_template):
-            template_weight.append(template_group[f'template_{i}'][()])
+            template_weight.append(json.loads(template_group[i]['embedding']))
 
         template_weight = torch.tensor(template_weight)
 
-        print('read h5py template embeddings complete!')
-        dataset.close()
+        print('read template embeddings complete!')
+
         nfeat = template_weight.size(1)
 
         self.linear1 = nn.Linear(nfeat, nfeat, bias=False)

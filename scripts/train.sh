@@ -109,7 +109,7 @@ then
     ns=10
 elif [ "$data_bin" = "yelp_large" ];
 then
-    max_tokens=8192 # distributed on two gpus
+    max_tokens=1024
     save_interval_updates=5000
     warmup_updates=5000
     max_update=300000
@@ -120,6 +120,7 @@ then
     lambda_config="0:0,150000:1"
     log_interval=100
     validate_interval=1000
+    retriever='bert'
     ns=10
 else
     max_tokens=0
@@ -160,10 +161,6 @@ else
     cstring=""
     restore_file=null.pt
 fi
-
-
-declare -a rescale_list=("0.3")
-declare -a alpha_list=("10")
 
 
 if [[ -v LOADDIR && eval_mode != "none" ]];

@@ -2,7 +2,7 @@ import os
 import argparse
 import torch
 import json
-# import h5py
+import h5py
 import gzip, csv
 import numpy as np
 
@@ -16,7 +16,7 @@ from transformers import *
 def get_sentence_features(batches, tokenizer, model, device, maxlen=500):
     features = tokenizer.batch_encode_plus(batches, padding=True,
         return_attention_mask=True, return_token_type_ids=True,
-        truncation=True, max_length=500)
+        truncation=True, max_length=maxlen)
     attention_mask = torch.tensor(features['attention_mask'], device=device)
     input_ids = torch.tensor(features['input_ids'], device=device)
     token_type_ids=torch.tensor(features['token_type_ids'], device=device)
@@ -36,7 +36,6 @@ def hdf5_create_dataset(group, input_file, fp16=False):
     global tokenizer, model, device
 
     print(f'precompute embeddings for {input_file}')
-    gname = group.name[1:]
     pbar = tqdm()
     with open(input_file, 'r') as fin:
         batches = []
@@ -51,7 +50,7 @@ def hdf5_create_dataset(group, input_file, fp16=False):
                     embed = embed.cpu().numpy()
                     if fp16:
                         embed = embed.astype('float16')
-                    group.create_dataset(f'{gname}_{cur}', embed.shape,
+                    group.create_dataset(f'{cur}', embed.shape,
                         dtype='float32' if not fp16 else 'float16', data=embed)
                     cur += 1
 
@@ -66,7 +65,7 @@ def hdf5_create_dataset(group, input_file, fp16=False):
                 embed = embed.cpu().numpy()
                 if fp16:
                     embed = embed.astype('float16')
-                group.create_dataset(f'{gname}_{cur}', embed.shape,
+                group.create_dataset(f'{cur}', embed.shape,
                     dtype='float32' if not fp16 else 'float16', data=embed)
                 cur += 1
 
@@ -217,13 +216,8 @@ if __name__ == '__main__':
         if os.path.isfile(f'datasets/{args.dataset}/{gname}.txt'):
             csv_create_dataset(os.path.join(save_dir, f'{args.dataset}.{model_short}.{gname}.csv.gz'),
                 os.path.join(f'datasets/{args.dataset}/{gname}.txt'), args.fp16)
-        # elif gname != 'test':
-        #     raise ValueError(f'{gname} file must exist')
 
-    # with h5py.File(os.path.join(save_dir, f'{args.dataset}.bert.hdf5'), 'w') as fout:
-    #     for gname in ['valid', 'test', 'template', 'train']:
-    #         if os.path.isfile(f'datasets/{args.dataset}/{gname}.txt'):
-    #             group = fout.create_group(gname)
-    #             hdf5_create_dataset(group, os.path.join(f'datasets/{args.dataset}/{gname}.txt'))
-    #         elif gname != 'test':
-    #             raise ValueError(f'{gname} file must exist')
+    # for gname in gname_list:
+    #     if os.path.isfile(f'datasets/{args.dataset}/{gname}.txt'):
+    #         with h5py.File(os.path.join(save_dir, f'{args.dataset}.{model_short}.{gname}.hdf5'), 'w') as fout:
+    #             hdf5_create_dataset(fout, os.path.join(f'datasets/{args.dataset}/{gname}.txt'))
