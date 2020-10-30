@@ -1,4 +1,5 @@
 import os
+import subprocess
 import argparse
 import torch
 import json
@@ -68,33 +69,6 @@ def hdf5_create_dataset(group, input_file, fp16=False):
                 group.create_dataset(f'{cur}', embed.shape,
                     dtype='float32' if not fp16 else 'float16', data=embed)
                 cur += 1
-
-def write_np_memmap(dstore, input_file, dtype):
-    global tokenizer, model, device
-
-    print(f'precompute embeddings for {input_file}')
-    pbar = tqdm()
-    with open(input_file, 'r') as fin:
-        batches = []
-        cur = 0
-        for i, line in enumerate(fin):
-            batches.append(line.strip())
-            if (i+1) % batch_size == 0:
-                with torch.no_grad():
-                    embeddings = get_sentence_features(batches, tokenizer, model, device)
-
-                dstore[cur:cur+embeddings.size(0)] = embeddings.cpu().numpy().astype(dtype)
-                cur += embeddings.size(0)
-
-                pbar.update(len(batches))
-                batches = []
-
-        if len(batches) > 0:
-            with torch.no_grad():
-                embeddings = get_sentence_features(batches, tokenizer, model, device)
-
-            dstore[cur:cur+embeddings.size(0)] = embeddings.cpu().numpy().astype(dtype)
-            cur += embeddings.size(0)
 
 def jsonl_create_dataset(output_file, input_file, fp16=False):
     global tokenizer, model, device
@@ -180,6 +154,48 @@ def csv_create_dataset(output_file, input_file, fp16=False):
     fout.close()
 
 
+def np_create_dataset(output_file, input_file, fp16=False):
+    global tokenizer, model, device
+
+    print(f'precompute embeddings for {input_file}')
+    pbar = tqdm()
+    # fout = open(output_file, 'w')
+
+    proc = subprocess.run(['wc', '-l', input_file], capture_output=True)
+    dstore_size = int(proc.stdout.decode('utf-8').split()[0])
+
+    dtype = 'float16' if fp16 else 'float32'
+    print(f'{dstore_size} examples')
+    dstore = np.memmap(output_file, 
+                       dtype=dtype,
+                       mode='w+',
+                       shape=(dstore_size, model.config.hidden_size),
+                       )
+
+    with open(input_file, 'r') as fin:
+        batches = []
+        cur = 0
+        for i, line in enumerate(fin):
+            batches.append(line.strip())
+            if (i+1) % batch_size == 0:
+                with torch.no_grad():
+                    embeddings = get_sentence_features(batches, tokenizer, model, device)
+
+                dstore[cur:cur+embeddings.size(0)] = embeddings.cpu().numpy().astype(dtype)
+                cur += embeddings.size(0)
+
+                assert model.config.hidden_size == embeddings.size(1)
+
+                pbar.update(len(batches))
+                batches = []
+
+        if len(batches) > 0:
+            with torch.no_grad():
+                embeddings = get_sentence_features(batches, tokenizer, model, device)
+
+            dstore[cur:cur+embeddings.size(0)] = embeddings.cpu().numpy().astype(dtype)
+            cur += embeddings.size(0)
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='pre-compute the Bert embeddings')
     parser.add_argument('dataset', type=str, help='the path to the dataset name')
@@ -214,8 +230,13 @@ if __name__ == '__main__':
 
     for gname in gname_list:
         if os.path.isfile(f'datasets/{args.dataset}/{gname}.txt'):
-            csv_create_dataset(os.path.join(save_dir, f'{args.dataset}.{model_short}.{gname}.csv.gz'),
+            np_create_dataset(os.path.join(save_dir, f'{args.dataset}.{model_short}.{gname}.npy'),
                 os.path.join(f'datasets/{args.dataset}/{gname}.txt'), args.fp16)
+
+    # for gname in gname_list:
+    #     if os.path.isfile(f'datasets/{args.dataset}/{gname}.txt'):
+    #         csv_create_dataset(os.path.join(save_dir, f'{args.dataset}.{model_short}.{gname}.csv.gz'),
+    #             os.path.join(f'datasets/{args.dataset}/{gname}.txt'), args.fp16)
 
     # for gname in gname_list:
     #     if os.path.isfile(f'datasets/{args.dataset}/{gname}.txt'):

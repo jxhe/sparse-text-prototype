@@ -23,7 +23,7 @@ from datasets import load_dataset
 
 from .vae import VAEEncoder
 from .inv_editor import GuuInvEditor, LevenshteinInvEditor
-from .retriever import PrecomputeEmbedRetriever, BertRetriever
+from .retriever import PrecomputeEmbedRetriever, BertRetriever, get_file_len
 
 
 @register_model('sparse_prototype')
@@ -45,12 +45,15 @@ class TemplateModel(BaseFairseqModel):
         if args.criterion == 'lm_baseline':
             self.num_class = 1
         else:
-            template_group = load_dataset('csv',
-                                          data_files=f'{args.emb_dataset_file}.template.csv.gz',
-                                          cache_dir='hf_dataset_cache')
+            # template_group = load_dataset('csv',
+            #                               data_files=f'{args.emb_dataset_file}.template.csv.gz',
+            #                               cache_dir='hf_dataset_cache')
 
-            template_group = template_group['train']
-            self.num_class = len(template_group)
+            # template_group = template_group['train']
+            # self.num_class = len(template_group)
+
+            infer_dataset = args.data.split('/')[-1]
+            self.num_class = get_file_len(f'datasets/{infer_dataset}/template.txt')
 
         self.device = torch.device('cuda' if cuda else 'cpu')
 
@@ -306,6 +309,7 @@ class TemplateModel(BaseFairseqModel):
                 )
         elif args.retriever == 'precompute_emb':
             retriever = PrecomputeEmbedRetriever(
+                args=args,
                 dictionary=task.target_dictionary,
                 emb_dataset_path=args.emb_dataset_file,
                 rescale=args.embed_init_rescale,

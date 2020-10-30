@@ -1,5 +1,7 @@
 import os
 import json
+import subprocess
+import numpy as np
 
 import torch
 import torch.nn as nn
@@ -7,12 +9,17 @@ import torch.nn.functional as F
 
 from itertools import chain
 from fairseq import utils
-from datasets import load_dataset
+# from datasets import load_dataset
+
+
+def get_file_len(file):
+    proc = subprocess.run(['wc', '-l', file], capture_output=True)
+    return int(proc.stdout.decode('utf-8').split()[0])
 
 class PrecomputeEmbedRetriever(nn.Module):
     """the retriever module based on pretrained embeddings"""
-    def __init__(self, dictionary, emb_dataset_path, rescale=1.,
-        linear_bias=False, freeze=False, nlayers=0):
+    def __init__(self, args, dictionary, emb_dataset_path, rescale=1.,
+        linear_bias=False, freeze=False, nlayers=0, emb_size=768):
 
         super(PrecomputeEmbedRetriever, self).__init__()
 
@@ -20,18 +27,28 @@ class PrecomputeEmbedRetriever(nn.Module):
 
         self.dataset = {}
         split_list = ['template', 'train', 'valid', 'test']
+        # for split in split_list:
+        #     if os.path.isfile(f'{emb_dataset_path}.{split}.csv.gz'):
+        #         self.dataset[split] = load_dataset('csv',
+        #                                     data_files=f'{emb_dataset_path}.{split}.csv.gz',
+        #                                     cache_dir='hf_dataset_cache')
+
+        infer_dataset = args.data.split('/')[-1]
         for split in split_list:
-            if os.path.isfile(f'{emb_dataset_path}.{split}.csv.gz'):
-                self.dataset[split] = load_dataset('csv',
-                                            data_files=f'{emb_dataset_path}.{split}.csv.gz',
-                                            cache_dir='hf_dataset_cache')
+            if os.path.isfile(f'{emb_dataset_path}.{split}.npy'):
 
-        template_group = self.dataset['template']['train']
-        num_template = len(template_group)
-        template_weight = []
+                # emb_size is defaulted too 768 (BERT)
+                # here we use float16 since the embeddings are presaved in float16
+                example_size = get_file_len(f'datasets/{infer_dataset}/{split}.txt')
+                self.dataset[split] = np.memmap(f'{emb_dataset_path}.{split}.npy', 
+                    dtype='float16', mode='r', shape=(example_size, emb_size))
 
-        for i in range(num_template):
-            template_weight.append(json.loads(template_group[i]['embedding']))
+        template_weight = self.dataset['template']
+        num_template = len(template_weight)
+        # template_weight = []
+
+        # for i in range(num_template):
+        #     template_weight.append(json.loads(template_group[i]['embedding']))
 
         template_weight = torch.tensor(template_weight)
 
@@ -85,7 +102,8 @@ class PrecomputeEmbedRetriever(nn.Module):
 
         id_ = samples[key]
 
-        embeddings = [json.loads(self.dataset[split]['train'][i.item()]['embedding']) for i in id_]
+        # embeddings = [json.loads(self.dataset[split]['train'][i.item()]['embedding']) for i in id_]
+        embeddings = [self.dataset[split][i.item()] for i in id_]
         embeddings = self.linear1.weight.new_tensor(embeddings)
 
         if self.prune_linear2_weight is None:
