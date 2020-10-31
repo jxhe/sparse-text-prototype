@@ -47,8 +47,8 @@ GPU=0
 # evaluation parameters, only used during evaluationa after training
 eval_mode="none"  # perform training by default
 prune_num="-1"
-valid_subset="test" # use "valid" to test on valid set
-iw_nsamples=1000
+valid_subset="valid" # use "valid" to test on valid set
+iw_nsamples=5000
 
 while getopts ":g:a:p:k:r:f:c:u:e:d:s:" arg; do
   case $arg in
@@ -94,6 +94,8 @@ then
     log_interval=20
     validate_interval=1
     ns=10
+    retriever=precompute_emb
+    emb_type=bert
 elif [ "$data_bin" = "yelp" ];
 then
     max_tokens=2048
@@ -119,7 +121,8 @@ then
     lambda_config="0:0,150000:1"
     log_interval=100
     validate_interval=1000
-    retriever='sentbert'
+    # retriever='sentbert'
+    retriever=precompute_emb
     emb_type='sentbert'
     ns=5
 else
@@ -159,9 +162,9 @@ GPUSTR=$(printf "$GPU" | tr , _)
 lambda_conifg_str=$(printf "$lambda_config" | tr , _)
 lambda_conifg_str=$(printf "$lambda_conifg_str" | tr : _)
 
-if [[ -v LOADDIR && eval_mode = "none" ]];
+if [[ -v LOADDIR ]] && [ "$eval_mode" = "none" ];
 then
-    add_load_string=""
+    add_load_string="--reset-meters"
     cstring="_continue"
     restore_file=checkpoint_load.pt
 else
@@ -171,7 +174,7 @@ else
 fi
 
 
-if [[ -v LOADDIR && eval_mode != "none" ]];
+if [[ -v LOADDIR ]] && [ "$eval_mode" != "none" ];
 then
     SAVE=${LOADDIR}
     TENSORBOARD=${SAVE}/tensorboard
