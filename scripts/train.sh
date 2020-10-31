@@ -47,8 +47,8 @@ GPU=0
 # evaluation parameters, only used during evaluationa after training
 eval_mode="none"  # perform training by default
 prune_num="-1"
-valid_subset="test" # use "valid" to test on valid set
-iw_nsamples=1000
+valid_subset="valid" # use "valid" to test on valid set
+iw_nsamples=5000
 
 while getopts ":g:a:p:k:r:f:c:u:e:d:s:" arg; do
   case $arg in
@@ -94,6 +94,8 @@ then
     log_interval=20
     validate_interval=1
     ns=10
+    retriever=precompute_emb
+    emb_type=bert
 elif [ "$data_bin" = "yelp" ];
 then
     max_tokens=2048
@@ -107,19 +109,20 @@ then
 elif [ "$data_bin" = "yelp_large" ];
 then
     max_tokens=1024
-    save_interval_updates=10
+    save_interval_updates=5000
     warmup_updates=5000
     max_update=300000
     lr=0.005
-    update_freq=2
+    update_freq=4
     warmup_init_lr=${lr}
     kappa=40
     lambda_config="0:0,150000:1"
-    log_interval=5
+    log_interval=100
     validate_interval=1000
-    retriever='sentbert'
+    # retriever='sentbert'
+    retriever=precompute_emb
     emb_type='sentbert'
-    ns=10
+    ns=5
 else
     max_tokens=0
     save_interval_updates=0
@@ -127,7 +130,10 @@ else
     ns=0
 fi
 
-arch=${data_bin}
+if [[ ! -v arch ]];
+then
+    arch=${data_bin}
+fi
 
 glove_path=glove_embeddings/${data_bin}_glove.txt
 emb_dataset_file=precompute_embedding_datasets/${data_bin}/${data_bin}.${emb_type}
@@ -154,9 +160,9 @@ GPUSTR=$(printf "$GPU" | tr , _)
 lambda_conifg_str=$(printf "$lambda_config" | tr , _)
 lambda_conifg_str=$(printf "$lambda_conifg_str" | tr : _)
 
-if [[ -v LOADDIR && eval_mode = "none" ]];
+if [[ -v LOADDIR ]] && [ "$eval_mode" = "none" ];
 then
-    add_load_string=""
+    add_load_string="--reset-meters"
     cstring="_continue"
     restore_file=checkpoint_load.pt
 else
@@ -166,7 +172,7 @@ else
 fi
 
 
-if [[ -v LOADDIR && eval_mode != "none" ]];
+if [[ -v LOADDIR ]] && [ "$eval_mode" != "none" ];
 then
     SAVE=${LOADDIR}
     TENSORBOARD=${SAVE}/tensorboard

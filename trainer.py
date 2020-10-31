@@ -789,7 +789,7 @@ class Trainer(object):
     def _reduce_and_log_stats(self, logging_outputs, sample_size, grad_norm=None):
         if grad_norm is not None:
             metrics.log_speed("ups", 1., priority=100, round=2)
-            metrics.log_scalar("gnorm", grad_norm, priority=400, round=3)
+            metrics.log_scalar("gnorm", grad_norm.item(), priority=400, round=3)
             if self.args.clip_norm > 0:
                 metrics.log_scalar(
                     "clip",
@@ -797,7 +797,7 @@ class Trainer(object):
                         grad_norm > self.args.clip_norm,
                         grad_norm.new_tensor(100),
                         grad_norm.new_tensor(0),
-                    ),
+                    ).item(),
                     priority=500,
                     round=1,
                 )
