@@ -107,19 +107,21 @@ then
 elif [ "$data_bin" = "yelp_large" ];
 then
     max_tokens=1024
-    save_interval_updates=10
+    update_freq=4
+    # max_tokens=8192 # for LM training
+    # update_freq=2
+    save_interval_updates=5000
     warmup_updates=5000
     max_update=300000
     lr=0.005
-    update_freq=2
     warmup_init_lr=${lr}
     kappa=40
     lambda_config="0:0,150000:1"
-    log_interval=5
+    log_interval=100
     validate_interval=1000
     retriever='sentbert'
     emb_type='sentbert'
-    ns=10
+    ns=5
 else
     max_tokens=0
     save_interval_updates=0
@@ -127,7 +129,10 @@ else
     ns=0
 fi
 
-arch=${data_bin}
+if [[ ! -v arch ]];
+then
+    arch=${data_bin}
+fi
 
 glove_path=glove_embeddings/${data_bin}_glove.txt
 emb_dataset_file=precompute_embedding_datasets/${data_bin}/${data_bin}.${emb_type}
