@@ -1,5 +1,7 @@
 # import h5py
-import json
+import os
+import subprocess
+import numpy as np
 
 import torch
 import torch.nn as nn
@@ -7,13 +9,17 @@ import torch.nn.functional as F
 
 from transformers import *
 from fairseq import utils
-from datasets import load_dataset
+# from datasets import load_dataset
+
+def get_file_len(file):
+    proc = subprocess.run(['wc', '-l', file], capture_output=True)
+    return int(proc.stdout.decode('utf-8').split()[0])
 
 class BertRetriever(nn.Module):
     """the retriever module based on pretrained sentence-Bert embeddings"""
-    def __init__(self, dictionary, emb_dataset_path,
+    def __init__(self, args, dictionary, emb_dataset_path,
         rescale=1., linear_bias=False, stop_grad=False, 
-        freeze=False, cuda=True, sentbert=False):
+        freeze=False, cuda=True, sentbert=False, emb_size=768):
 
         super(BertRetriever, self).__init__()
 
@@ -21,17 +27,18 @@ class BertRetriever(nn.Module):
         self.stop_grad = stop_grad
         self.device = torch.device("cuda" if cuda else "cpu")
 
-        template_group = load_dataset('csv',
-                                      data_files=f'{emb_dataset_path}.template.csv.gz',
-                                      cache_dir='hf_dataset_cache')
+        infer_dataset = args.data.split('/')[-1]
+        if os.path.isfile(f'{emb_dataset_path}.template.npy'):
 
-        template_group = template_group['train']
+            # emb_size is defaulted too 768 (BERT)
+            # here we use float16 since the embeddings are presaved in float16
+            example_size = get_file_len(f'datasets/{infer_dataset}/template.txt')
+            template_weight = np.memmap(f'{emb_dataset_path}.template.npy', 
+                dtype='float16', mode='r', shape=(example_size, emb_size))
+        else:
+            raise ValueError('template numpy file does not exist')
 
-        num_template = len(template_group)
-        template_weight = []
-
-        for i in range(num_template):
-            template_weight.append(json.loads(template_group[i]['embedding']))
+        num_template = len(template_weight)
 
         template_weight = torch.tensor(template_weight)
 

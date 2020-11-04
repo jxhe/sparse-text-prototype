@@ -48,7 +48,7 @@ GPU=0
 eval_mode="none"  # perform training by default
 prune_num="-1"
 valid_subset="valid" # use "valid" to test on valid set
-iw_nsamples=5000
+iw_nsamples=10000
 
 while getopts ":g:a:p:k:r:f:c:u:e:d:s:" arg; do
   case $arg in
@@ -119,8 +119,8 @@ then
     lambda_config="0:0,150000:1"
     log_interval=100
     validate_interval=1000
-    # retriever='sentbert'
-    retriever=precompute_emb
+    retriever='sentbert'
+    # retriever=precompute_emb
     emb_type='sentbert'
     ns=5
 else

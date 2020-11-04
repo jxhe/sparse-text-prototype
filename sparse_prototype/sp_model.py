@@ -298,6 +298,7 @@ class TemplateModel(BaseFairseqModel):
 
         if args.retriever == 'bert' or args.retriever == 'sentbert':
             retriever = BertRetriever(
+                args=args,
                 dictionary=task.target_dictionary,
                 emb_dataset_path=args.emb_dataset_file,
                 rescale=args.embed_init_rescale,
