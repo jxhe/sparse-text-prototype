@@ -1,4 +1,5 @@
 import os
+import subprocess
 import argparse
 import torch
 import json
@@ -16,7 +17,7 @@ from transformers import *
 def get_sentence_features(batches, tokenizer, model, device, maxlen=500):
     features = tokenizer.batch_encode_plus(batches, padding=True,
         return_attention_mask=True, return_token_type_ids=True,
-        truncation=True, max_length=500)
+        truncation=True, max_length=maxlen)
     attention_mask = torch.tensor(features['attention_mask'], device=device)
     input_ids = torch.tensor(features['input_ids'], device=device)
     token_type_ids=torch.tensor(features['token_type_ids'], device=device)
@@ -36,7 +37,6 @@ def hdf5_create_dataset(group, input_file, fp16=False):
     global tokenizer, model, device
 
     print(f'precompute embeddings for {input_file}')
-    gname = group.name[1:]
     pbar = tqdm()
     with open(input_file, 'r') as fin:
         batches = []
@@ -51,7 +51,7 @@ def hdf5_create_dataset(group, input_file, fp16=False):
                     embed = embed.cpu().numpy()
                     if fp16:
                         embed = embed.astype('float16')
-                    group.create_dataset(f'{gname}_{cur}', embed.shape,
+                    group.create_dataset(f'{cur}', embed.shape,
                         dtype='float32' if not fp16 else 'float16', data=embed)
                     cur += 1
 
@@ -66,36 +66,9 @@ def hdf5_create_dataset(group, input_file, fp16=False):
                 embed = embed.cpu().numpy()
                 if fp16:
                     embed = embed.astype('float16')
-                group.create_dataset(f'{gname}_{cur}', embed.shape,
+                group.create_dataset(f'{cur}', embed.shape,
                     dtype='float32' if not fp16 else 'float16', data=embed)
                 cur += 1
-
-def write_np_memmap(dstore, input_file, dtype):
-    global tokenizer, model, device
-
-    print(f'precompute embeddings for {input_file}')
-    pbar = tqdm()
-    with open(input_file, 'r') as fin:
-        batches = []
-        cur = 0
-        for i, line in enumerate(fin):
-            batches.append(line.strip())
-            if (i+1) % batch_size == 0:
-                with torch.no_grad():
-                    embeddings = get_sentence_features(batches, tokenizer, model, device)
-
-                dstore[cur:cur+embeddings.size(0)] = embeddings.cpu().numpy().astype(dtype)
-                cur += embeddings.size(0)
-
-                pbar.update(len(batches))
-                batches = []
-
-        if len(batches) > 0:
-            with torch.no_grad():
-                embeddings = get_sentence_features(batches, tokenizer, model, device)
-
-            dstore[cur:cur+embeddings.size(0)] = embeddings.cpu().numpy().astype(dtype)
-            cur += embeddings.size(0)
 
 def jsonl_create_dataset(output_file, input_file, fp16=False):
     global tokenizer, model, device
@@ -181,14 +154,56 @@ def csv_create_dataset(output_file, input_file, fp16=False):
     fout.close()
 
 
+def np_create_dataset(output_file, input_file, fp16=False):
+    global tokenizer, model, device
+
+    print(f'precompute embeddings for {input_file}')
+    pbar = tqdm()
+    # fout = open(output_file, 'w')
+
+    proc = subprocess.run(['wc', '-l', input_file], capture_output=True)
+    dstore_size = int(proc.stdout.decode('utf-8').split()[0])
+
+    dtype = 'float16' if fp16 else 'float32'
+    print(f'{dstore_size} examples')
+    dstore = np.memmap(output_file,
+                       dtype=dtype,
+                       mode='w+',
+                       shape=(dstore_size, model.config.hidden_size),
+                       )
+
+    with open(input_file, 'r') as fin:
+        batches = []
+        cur = 0
+        for i, line in enumerate(fin):
+            batches.append(line.strip())
+            if (i+1) % batch_size == 0:
+                with torch.no_grad():
+                    embeddings = get_sentence_features(batches, tokenizer, model, device)
+
+                dstore[cur:cur+embeddings.size(0)] = embeddings.cpu().numpy().astype(dtype)
+                cur += embeddings.size(0)
+
+                assert model.config.hidden_size == embeddings.size(1)
+
+                pbar.update(len(batches))
+                batches = []
+
+        if len(batches) > 0:
+            with torch.no_grad():
+                embeddings = get_sentence_features(batches, tokenizer, model, device)
+
+            dstore[cur:cur+embeddings.size(0)] = embeddings.cpu().numpy().astype(dtype)
+            cur += embeddings.size(0)
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='pre-compute the Bert embeddings')
     parser.add_argument('dataset', type=str, help='the path to the dataset name')
     parser.add_argument('--numpy', action='store_true', help='store into numpy memmap format')
     parser.add_argument('--split', type=str, default=None,
         help='if specified, only compute for this split')
-    parser.add_argument('--fp16', action='store_true', default=False,
-        help='whether to use half float point')
+    parser.add_argument('--fp32', action='store_true', default=False,
+        help='whether to use half float point. It uses half float by default')
     parser.add_argument('--sent-bert', action='store_true', default=False,
         help='whether to use sentence-BERT')
 
@@ -215,15 +230,15 @@ if __name__ == '__main__':
 
     for gname in gname_list:
         if os.path.isfile(f'datasets/{args.dataset}/{gname}.txt'):
-            csv_create_dataset(os.path.join(save_dir, f'{args.dataset}.{model_short}.{gname}.csv.gz'),
-                os.path.join(f'datasets/{args.dataset}/{gname}.txt'), args.fp16)
-        # elif gname != 'test':
-        #     raise ValueError(f'{gname} file must exist')
+            np_create_dataset(os.path.join(save_dir, f'{args.dataset}.{model_short}.{gname}.npy'),
+                os.path.join(f'datasets/{args.dataset}/{gname}.txt'), not args.fp32)
 
-    # with h5py.File(os.path.join(save_dir, f'{args.dataset}.bert.hdf5'), 'w') as fout:
-    #     for gname in ['valid', 'test', 'template', 'train']:
-    #         if os.path.isfile(f'datasets/{args.dataset}/{gname}.txt'):
-    #             group = fout.create_group(gname)
-    #             hdf5_create_dataset(group, os.path.join(f'datasets/{args.dataset}/{gname}.txt'))
-    #         elif gname != 'test':
-    #             raise ValueError(f'{gname} file must exist')
+    # for gname in gname_list:
+    #     if os.path.isfile(f'datasets/{args.dataset}/{gname}.txt'):
+    #         csv_create_dataset(os.path.join(save_dir, f'{args.dataset}.{model_short}.{gname}.csv.gz'),
+    #             os.path.join(f'datasets/{args.dataset}/{gname}.txt'), args.fp16)
+
+    # for gname in gname_list:
+    #     if os.path.isfile(f'datasets/{args.dataset}/{gname}.txt'):
+    #         with h5py.File(os.path.join(save_dir, f'{args.dataset}.{model_short}.{gname}.hdf5'), 'w') as fout:
+    #             hdf5_create_dataset(fout, os.path.join(f'datasets/{args.dataset}/{gname}.txt'))

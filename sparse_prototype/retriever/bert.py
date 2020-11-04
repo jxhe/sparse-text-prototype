@@ -1,4 +1,7 @@
-import h5py
+# import h5py
+import os
+import subprocess
+import numpy as np
 
 import torch
 import torch.nn as nn
@@ -6,12 +9,17 @@ import torch.nn.functional as F
 
 from transformers import *
 from fairseq import utils
+# from datasets import load_dataset
+
+def get_file_len(file):
+    proc = subprocess.run(['wc', '-l', file], capture_output=True)
+    return int(proc.stdout.decode('utf-8').split()[0])
 
 class BertRetriever(nn.Module):
     """the retriever module based on pretrained sentence-Bert embeddings"""
-    def __init__(self, dictionary, emb_dataset_path,
+    def __init__(self, args, dictionary, emb_dataset_path,
         rescale=1., linear_bias=False, stop_grad=False, 
-        freeze=False, cuda=True):
+        freeze=False, cuda=True, sentbert=False, emb_size=768):
 
         super(BertRetriever, self).__init__()
 
@@ -19,29 +27,33 @@ class BertRetriever(nn.Module):
         self.stop_grad = stop_grad
         self.device = torch.device("cuda" if cuda else "cpu")
 
-        dataset = h5py.File(emb_dataset_path, 'r') 
-        template_group = dataset['template']
-        num_template = len(template_group)
-        template_weight = []
+        infer_dataset = args.data.split('/')[-1]
+        if os.path.isfile(f'{emb_dataset_path}.template.npy'):
 
-        for i in range(num_template):
-            template_weight.append(template_group[f'template_{i}'][()])
+            # emb_size is defaulted too 768 (BERT)
+            # here we use float16 since the embeddings are presaved in float16
+            example_size = get_file_len(f'datasets/{infer_dataset}/template.txt')
+            template_weight = np.memmap(f'{emb_dataset_path}.template.npy', 
+                dtype='float16', mode='r', shape=(example_size, emb_size))
+        else:
+            raise ValueError('template numpy file does not exist')
+
+        num_template = len(template_weight)
 
         template_weight = torch.tensor(template_weight)
 
-        print('read h5py template embeddings complete!')
-        dataset.close()
+        print('read template embeddings complete!')
+
         nfeat = template_weight.size(1)
 
         self.linear1 = nn.Linear(nfeat, nfeat, bias=False)
         self.linear2 = nn.Linear(nfeat, num_template, bias=linear_bias)
 
         # this should be consistent with pre-saved template embeddings
-        MODELS = [BertModel, BertTokenizer, 'bert-base-uncased']
-        model_class, tokenizer_class, pretrained_weights = MODELS
+        model_name = 'bert-base-uncased' if not sentbert else 'sentence-transformers/bert-base-nli-mean-tokens'
 
-        self.encoder = model_class.from_pretrained(pretrained_weights)
-        self.tokenizer = tokenizer_class.from_pretrained(pretrained_weights)
+        self.encoder = AutoModel.from_pretrained(model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
 
         if stop_grad:
             for param in self.encoder.parameters():
@@ -67,9 +79,10 @@ class BertRetriever(nn.Module):
         self.prune_linear2_weight = None
 
 
-    def encode(self, batches):
+    def encode(self, batches, maxlen=500):
         features = self.tokenizer.batch_encode_plus(batches, padding=True,
-            return_attention_mask=True, return_token_type_ids=True, return_tensors='pt')
+            return_attention_mask=True, return_token_type_ids=True, 
+            truncation=True, max_length=maxlen, return_tensors='pt')
         attention_mask = features['attention_mask'].to(self.device)
         input_ids = features['input_ids'].to(self.device)
         token_type_ids= features['token_type_ids'].to(self.device)

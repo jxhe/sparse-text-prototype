@@ -23,7 +23,7 @@ from datasets import load_dataset
 
 from .vae import VAEEncoder
 from .inv_editor import GuuInvEditor, LevenshteinInvEditor
-from .retriever import PrecomputeEmbedRetriever, BertRetriever
+from .retriever import PrecomputeEmbedRetriever, BertRetriever, get_file_len
 
 
 @register_model('sparse_prototype')
@@ -43,12 +43,18 @@ class TemplateModel(BaseFairseqModel):
 
         self.decoder = decoder
 
-        template_group = load_dataset('csv',
-                                      data_files=f'{args.emb_dataset_file}.template.csv.gz',
-                                      cache_dir='hf_dataset_cache')
+        if args.criterion == 'lm_baseline':
+            self.num_class = 1
+        else:
+            # template_group = load_dataset('csv',
+            #                               data_files=f'{args.emb_dataset_file}.template.csv.gz',
+            #                               cache_dir='hf_dataset_cache')
 
-        template_group = template_group['train']
-        self.num_class = len(template_group)
+            # template_group = template_group['train']
+            # self.num_class = len(template_group)
+
+            infer_dataset = args.data.split('/')[-1]
+            self.num_class = get_file_len(f'datasets/{infer_dataset}/template.txt')
 
         self.device = torch.device('cuda' if cuda else 'cpu')
 
@@ -131,7 +137,7 @@ class TemplateModel(BaseFairseqModel):
         parser.add_argument('--inveditor-embed-path', type=str, metavar='STR',
                             help='path to pre-trained encoder embedding')
         parser.add_argument('--retriever', type=str, metavar='STR',
-                            choices=['precompute_emb', 'bert'],
+                            choices=['precompute_emb', 'bert', 'sentbert'],
                             help='the retrieve module')
         parser.add_argument('--grad-lambda', type=str, metavar='BOOL',
                             help='if update lambda with gradient descent')
@@ -345,6 +351,7 @@ class TemplateModel(BaseFairseqModel):
 
         if args.retriever == 'bert':
             retriever = BertRetriever(
+                args=args,
                 dictionary=task.target_dictionary,
                 emb_dataset_path=args.emb_dataset_file,
                 rescale=args.embed_init_rescale,
@@ -352,9 +359,11 @@ class TemplateModel(BaseFairseqModel):
                 stop_grad=options.eval_bool(args.stop_bert_grad),
                 freeze=options.eval_bool(args.freeze_retriever),
                 cuda=cuda,
+                sentbert=False if args.retriever == 'bert' else True,
                 )
         elif args.retriever == 'precompute_emb':
             retriever = PrecomputeEmbedRetriever(
+                args=args,
                 dictionary=task.target_dictionary,
                 emb_dataset_path=args.emb_dataset_file,
                 rescale=args.embed_init_rescale,
