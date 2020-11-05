@@ -18,8 +18,6 @@ edit_embed_dim=10
 retrieve_split=valid1
 criterion="sp_elbo"
 
-glove_path=glove_embeddings/${data_bin}_glove.txt
-emb_dataset_file=precompute_embedding_datasets/${data_bin}/${data_bin}.${emb_type}
 
 # optimization hyperparameters
 warmup_init_lr='1e-03'
@@ -52,7 +50,7 @@ prune_num="-1"
 valid_subset="test" # use "valid" to test on valid set
 iw_nsamples=100
 
-while getopts ":g:a:p:k:r:f:c:u:e:" arg; do
+while getopts ":g:a:p:k:r:f:c:u:e:d:" arg; do
   case $arg in
     g) GPU="$OPTARG"
     ;;
@@ -72,10 +70,15 @@ while getopts ":g:a:p:k:r:f:c:u:e:" arg; do
     ;;
     e) eval_mode="$OPTARG"
     ;;
+    d) data_bin="$OPTARG"
+    ;;
     \?) echo "Invalid option -$OPTARG" >&2
     ;;
   esac
 done
+
+glove_path=glove_embeddings/${data_bin}_glove.txt
+emb_dataset_file=precompute_embedding_datasets/${data_bin}/${data_bin}.${emb_type}
 
 
 if [ "$eval_mode" = "none" ];
@@ -152,10 +155,6 @@ else
     cstring=""
     restore_file=null.pt
 fi
-
-
-declare -a rescale_list=("0.3")
-declare -a alpha_list=("10")
 
 
 if [[ -v LOADDIR && eval_mode != "none" ]];

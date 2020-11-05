@@ -199,7 +199,6 @@ def np_create_dataset(output_file, input_file, fp16=False):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='pre-compute the Bert embeddings')
     parser.add_argument('dataset', type=str, help='the path to the dataset name')
-    parser.add_argument('--numpy', action='store_true', help='store into numpy memmap format')
     parser.add_argument('--split', type=str, default=None,
         help='if specified, only compute for this split')
     parser.add_argument('--fp32', action='store_true', default=False,
