@@ -47,7 +47,7 @@ GPU=0
 # evaluation parameters, only used during evaluationa after training
 eval_mode="none"  # perform training by default
 prune_num="-1"
-valid_subset="test" # use "valid" to test on valid set
+valid_subset="valid" # use "valid" to test on valid set
 iw_nsamples=100
 
 while getopts ":g:a:p:k:r:f:c:u:e:d:" arg; do
