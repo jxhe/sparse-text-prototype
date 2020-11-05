@@ -15,11 +15,11 @@ class VMFVAE(VAEBase):
 
         # self.prior = torch.distributions.normal.Normal(loc, scale)
 
-    def encode(self, src_tokens, src_lengths, nsamples=1, **kwargs=None):
+    def encode(self, src_tokens, src_lengths, nsamples=1, **kwargs):
         """
         Returns: Tensor1, Tensor2
             Tensor1: the tensor latent z with shape [batch, nsamples, nz]
             Tensor2: the tenor of KL for each x with shape [batch]
         """
-        
+
         encoder_out = self.encoder(src_tokens, src_lengths=src_lengths, **kwargs)

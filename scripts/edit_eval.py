@@ -18,7 +18,7 @@ def flat_cigar(cigar):
             num.append(cigar[pointer])
             pointer += 1
         num = int(''.join(num))
-        
+
         r.extend([cigar[pointer]] * num)
         pointer += 1
 
@@ -49,17 +49,13 @@ def write_file(fname: str, data: List[str]):
     with open(fname, 'w') as fout:
         for sent in data:
             if isinstance(sent, list):
-                fout.write('{}\n'.format(' '.join(sent))) 
+                fout.write('{}\n'.format(' '.join(sent)))
             else:
-                fout.write('{}\n'.format(sent)) 
-
-
-def eval_edit()
-
+                fout.write('{}\n'.format(sent))
 
 
 parser = argparse.ArgumentParser(description='Evaluate analysis metrics')
-parser.add_argument('--prefix', type=str, choices=['inference', 'generation'], 
+parser.add_argument('--prefix', type=str, choices=['inference', 'generation'],
     help='prediction file prefix')
 parser.add_argument('--exp-dir', type=str, help='output directory')
 
