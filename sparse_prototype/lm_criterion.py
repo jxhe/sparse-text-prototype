@@ -16,7 +16,7 @@ from fairseq.criterions import LegacyFairseqCriterion, FairseqCriterion, registe
 def label_smoothed_nll_loss(lprobs, target, epsilon, ignore_index=None, reduce=True):
     """compute labeled smoothed nll loss
     Returns:
-        loss: the actual loss to be optimized (after smoothing), with 
+        loss: the actual loss to be optimized (after smoothing), with
             shape (batch) if reduce is true else (batch, seq_len)
         nll_loss: the NLL loss with shape (batch) if reduce is true else
             (batch, seq_len)
@@ -43,9 +43,9 @@ def label_smoothed_nll_loss(lprobs, target, epsilon, ignore_index=None, reduce=T
     return loss, nll_loss
 
 def write_loss(ll_batch, sample, infer_ns, fout):
-    revert_order = sample['net_input']['revert_order']
-    id_list = sample['tgt_id'].index_select(0, revert_order).view(-1, infer_ns)[:, 0]
-    length_list = sample['net_input']['src_lengths'].index_select(0, revert_order).view(-1, infer_ns)[:, 0]
+    # revert_order = sample['net_input']['revert_order']
+    id_list = sample['id']
+    length_list = sample['net_input']['src_lengths']
 
     for id_, ntoken, ll in zip(id_list, length_list, ll_batch):
         fout.write('{} {} {}\n'.format(id_.item(), ntoken.item(), ll.item()))
@@ -106,10 +106,10 @@ class LMBaseline(LegacyFairseqCriterion):
         loss = smoothed_nll_loss.sum()
 
         if self.f_loss is not None:
-            revert_order = sample['net_input']['revert_order']
-            nll_loss_reorder = nll_loss.index_select(0, revert_order).view(-1, model.infer_ns).mean(1)
-            write_loss(-nll_loss_reorder, sample, model.infer_ns, self.f_loss)
-        
+            # revert_order = sample['net_input']['revert_order']
+            # nll_loss_reorder = nll_loss.index_select(0, revert_order).view(-1, model.infer_ns).mean(1)
+            write_loss(-nll_loss, sample, 1, self.f_loss)
+
 
         return loss, nll_loss.sum()
 
@@ -121,16 +121,16 @@ class LMBaseline(LegacyFairseqCriterion):
         ntokens = sum(log.get('ntokens', 0) for log in logging_outputs)
         sample_size = sum(log.get('sample_size', 0) for log in logging_outputs)
         nsentences = sum(log.get('nsentences', 0) for log in logging_outputs)
-    
-        metrics.log_scalar('loss', loss_sum / sample_size / math.log(2), 
+
+        metrics.log_scalar('loss', loss_sum / sample_size / math.log(2),
             sample_size, round=3, priority=3)
 
-        metrics.log_scalar('nll_loss_s', nll_loss_sum / nsentences, 
+        metrics.log_scalar('nll_loss_s', nll_loss_sum / nsentences,
             nsentences, round=3, priority=4)
 
-        metrics.log_scalar('nll_loss_t', nll_loss_sum / ntokens / math.log(2), 
+        metrics.log_scalar('nll_loss_t', nll_loss_sum / ntokens / math.log(2),
             ntokens, round=3, priority=5)
-        
+
         metrics.log_derived('ppl', lambda meters: utils.get_perplexity(meters['nll_loss_t'].avg), priority=6)
 
     @staticmethod

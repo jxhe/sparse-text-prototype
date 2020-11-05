@@ -271,7 +271,7 @@ def validate(args, trainer, task, epoch_itr, subsets, prune=-1):
         if prune > 0:
             index_map = trainer.get_model().set_prune_index(prune)
             task.set_index_map(index_map)
-    
+
         # not write templates for time profiling
         write_template_flag = False if args.eval_mode == 'time' else True
 
@@ -280,7 +280,7 @@ def validate(args, trainer, task, epoch_itr, subsets, prune=-1):
             print('write template files')
 
             if args.eval_mode == 'none':
-                fout = open(os.path.join(args.save_dir, 
+                fout = open(os.path.join(args.save_dir,
                     'templates_{}_{}.txt'.format(epoch_itr.epoch, trainer.get_num_updates())), 'w')
             else:
                 fout = open(os.path.join(args.save_dir,'templates_eval_{}.txt'.format(subset)), 'w')
@@ -314,7 +314,7 @@ def validate(args, trainer, task, epoch_itr, subsets, prune=-1):
 def validate_iw(args, trainer, task, epoch_itr, subsets, prune=-1, mode='iw'):
     """Evaluate the model on the validation set(s) and return the losses."""
 
-    if mode == 'none' or mode == 'time':
+    if mode == 'none' or mode == 'time' or args.criterion == 'lm_baseline':
         return [0]
 
     # top k instead of sampling to approximate sum of prototypes for evaluation
