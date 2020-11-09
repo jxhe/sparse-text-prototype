@@ -22,8 +22,8 @@ criterion="sp_elbo"
 warmup_init_lr='1e-03'
 lr=0.001
 max_update=30000
-# retriever=precompute_emb
-retriever=bert
+retriever=precompute_emb
+# retriever=bert
 linear_bias=0
 weight_decay=0.0001
 stop_bert_grad=1
@@ -121,8 +121,8 @@ then
     lambda_config="0:0,150000:1"
     log_interval=100
     validate_interval=1000
-    retriever='sentbert'
-    # retriever=precompute_emb
+    # retriever='sentbert'
+    retriever=precompute_emb
     emb_type='sentbert'
     ns=5
 else
