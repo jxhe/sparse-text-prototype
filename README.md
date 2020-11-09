@@ -50,7 +50,7 @@ mkdir datasets
 tar -xvzf coco40k.tar.gz -C datasets
 
 # binarize dataset for fairseq
-bash scripts/binarize.sh coco40k
+bash scripts/binarize_data.sh coco40k
 
 # generate a mask file which is used to avoid selecting 
 # exactly the same example as prototype during training
