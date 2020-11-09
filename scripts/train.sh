@@ -109,11 +109,13 @@ then
 elif [ "$data_bin" = "yelp_large" ];
 then
     max_tokens=1024
+    update_freq=4
+    # max_tokens=8192 # for LM training
+    # update_freq=2
     save_interval_updates=5000
     warmup_updates=5000
     max_update=300000
     lr=0.005
-    update_freq=4
     warmup_init_lr=${lr}
     kappa=40
     lambda_config="0:0,150000:1"
