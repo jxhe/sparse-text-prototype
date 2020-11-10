@@ -37,9 +37,9 @@ forget_rate=0.8
 decay_rate=1
 
 # some important hyperparameters that we may need to change
-rescale_factor=0.3 # rescaling factor for reinforce sampling
+rescale_factor=1 # rescaling factor for reinforce sampling
 free_bits=0       # KL free bits for mitigating posterior collapse
-alpha=0.1        # Dirichlet hyperparameters
+alpha=1        # Dirichlet hyperparameters
 lambda_config="0:0,1500:1"  # KL weights annealing schedule
 GPU=0
 
@@ -106,14 +106,18 @@ then
     log_interval=100
     validate_interval=1000
     ns=10
-elif [ "$data_bin" = "yelp_large" ];
+elif [ "$data_bin" = "yelp_large_bpe" ];
 then
-    max_tokens=1024
-    update_freq=4
-    # max_tokens=8192 # for LM training
-    # update_freq=2
+    if [ "$criterion" = "lm_baseline" ];
+    then
+        max_tokens=8192
+        update_freq=2
+    else
+        max_tokens=1024
+        update_freq=4
+    fi
     save_interval_updates=5000
-    warmup_updates=5000
+    warmup_updates=20000
     max_update=300000
     lr=0.005
     warmup_init_lr=${lr}
@@ -208,10 +212,10 @@ CUDA_VISIBLE_DEVICES=${GPU} python train.py \
     --emb-dataset-file ${emb_dataset_file} \
     --reinforce ${reinforce} --infer-ns ${ns} \
     --freeze-retriever ${freeze_retriever}  --decoder-copy ${copy} \
-    --inveditor-embed-path ${glove_path} --encoder-embed-path ${glove_path} --decoder-embed-path ${glove_path} \
     --encoder-embed-dim 300 --decoder-embed-dim 300 \
     --user-dir sparse_prototype \
     --forget-rate ${forget_rate} --decay-rate ${decay_rate} --retrieve-split ${retrieve_split} --alpha ${alpha} --vmf-kappa ${kappa} \
+    --inveditor-embed-path ${glove_path} --encoder-embed-path ${glove_path} --decoder-embed-path ${glove_path} \
     --linear-bias ${linear_bias} --stop-bert-grad ${stop_bert_grad} \
     --criterion ${criterion} --label-smoothing 0. --num-workers 0 \
     --max-tokens ${max_tokens} \

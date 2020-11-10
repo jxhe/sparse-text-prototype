@@ -11,7 +11,6 @@ from itertools import chain
 from fairseq import utils
 # from datasets import load_dataset
 
-
 def get_file_len(file):
     proc = subprocess.run(['wc', '-l', file], capture_output=True)
     return int(proc.stdout.decode('utf-8').split()[0])
