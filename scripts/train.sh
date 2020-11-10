@@ -215,7 +215,6 @@ CUDA_VISIBLE_DEVICES=${GPU} python train.py \
     --encoder-embed-dim 300 --decoder-embed-dim 300 \
     --user-dir sparse_prototype \
     --forget-rate ${forget_rate} --decay-rate ${decay_rate} --retrieve-split ${retrieve_split} --alpha ${alpha} --vmf-kappa ${kappa} \
-    --inveditor-embed-path ${glove_path} --encoder-embed-path ${glove_path} --decoder-embed-path ${glove_path} \
     --linear-bias ${linear_bias} --stop-bert-grad ${stop_bert_grad} \
     --criterion ${criterion} --label-smoothing 0. --num-workers 0 \
     --max-tokens ${max_tokens} \
@@ -229,3 +228,4 @@ CUDA_VISIBLE_DEVICES=${GPU} python train.py \
     ${add_load_string} --restore-file ${SAVE}/checkpoint_load.pt \
     ${eval_params} \
     | tee -a ${SAVE}/${stdout}
+#     --inveditor-embed-path ${glove_path} --encoder-embed-path ${glove_path} --decoder-embed-path ${glove_path} \
