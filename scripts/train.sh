@@ -125,8 +125,8 @@ then
     lambda_config="0:0,150000:1"
     log_interval=100
     validate_interval=1000
-    # retriever='sentbert'
-    retriever=precompute_emb
+    retriever='sentbert'
+    # retriever=precompute_emb
     emb_type='sentbert'
     ns=5
 else
