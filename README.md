@@ -19,7 +19,7 @@ Install dependencies:
 
 ```bash
 # install fairseq from a specific commit
-git clone fairseq
+git clone git@github.com:pytorch/fairseq.git
 cd fairseq
 git reset --hard b65a85b
 pip install editable ./
@@ -82,7 +82,7 @@ unzip glove.6B.zip -d glove_embeddings
 python scripts/compress_glove.py \
 		--embed-path glove_embeddings/glove.6B.300d.txt \
 		--dict-path data-bin/[dataset_name]/dict.txt \
-		> glove_embeddings/[dataset_name]/_glove.txt
+		> glove_embeddings/[dataset_name]_glove.txt
 ```
 
 
