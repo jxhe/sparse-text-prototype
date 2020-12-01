@@ -22,7 +22,7 @@ Install dependencies:
 git clone git@github.com:pytorch/fairseq.git
 cd fairseq
 git reset --hard b65a85b
-pip install editable ./
+pip install --editable ./
 
 cd ..
 
