@@ -40,8 +40,16 @@ class PrecomputeEmbedRetriever(nn.Module):
                 # emb_size is defaulted too 768 (BERT)
                 # here we use float16 since the embeddings are presaved in float16
                 example_size = get_file_len(f'datasets/{infer_dataset}/{split}.txt')
-                self.dataset[split] = np.memmap(f'{emb_dataset_path}.{split}.npy', 
-                    dtype='float16', mode='r', shape=(example_size, emb_size))
+                
+                dataset_name = args.data.split('/')[1]
+                if dataset_name != 'cocov':
+                    self.dataset[split] = np.memmap(f'{emb_dataset_path}.{split}.npy', 
+                        dtype='float16', mode='r', shape=(example_size, emb_size))
+                else:
+                    # temp change, for cocov 
+                    emb_size=1024
+                    self.dataset[split] = np.memmap(f'{emb_dataset_path}.{split}.npy', 
+                        dtype='float32', mode='r', shape=(example_size, emb_size))
 
         template_weight = self.dataset['template']
         num_template = len(template_weight)
@@ -50,7 +58,7 @@ class PrecomputeEmbedRetriever(nn.Module):
         # for i in range(num_template):
         #     template_weight.append(json.loads(template_group[i]['embedding']))
 
-        template_weight = torch.tensor(template_weight)
+        template_weight = torch.tensor(np.array(template_weight))
 
         print('read template embeddings complete!')
 

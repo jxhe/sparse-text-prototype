@@ -24,6 +24,7 @@ from datasets import load_dataset
 from .vae import VAEEncoder
 from .inv_editor import GuuInvEditor, LevenshteinInvEditor
 from .retriever import PrecomputeEmbedRetriever, BertRetriever, get_file_len
+from .sp_hub_interface import TemplateHubInterface
 
 
 @register_model('sparse_prototype')
@@ -804,6 +805,46 @@ class TemplateModel(BaseFairseqModel):
                }
 
         return res
+    
+    @classmethod
+    def from_pretrained(
+        cls,
+        model_name_or_path,
+        checkpoint_file="model.pt",
+        data_name_or_path=".",
+        **kwargs,
+    ):
+        """
+        Load a :class:`~fairseq.models.FairseqModel` from a pre-trained model
+        file. Downloads and caches the pre-trained model file if needed.
+        The base implementation returns a
+        :class:`~fairseq.hub_utils.GeneratorHubInterface`, which can be used to
+        generate translations or sample from language models. The underlying
+        :class:`~fairseq.models.FairseqModel` can be accessed via the
+        *generator.models* attribute.
+        Other models may override this to implement custom hub interfaces.
+        Args:
+            model_name_or_path (str): either the name of a pre-trained model to
+                load or a path/URL to a pre-trained model state dict
+            checkpoint_file (str, optional): colon-separated list of checkpoint
+                files in the model archive to ensemble (default: 'model.pt')
+            data_name_or_path (str, optional): point args.data to the archive
+                at the given path/URL. Can start with '.' or './' to reuse the
+                model archive path.
+        """
+#         from .sp_hub_interface import TemplateHubInterface
+        from fairseq import hub_utils
+
+        x = hub_utils.from_pretrained(
+            model_name_or_path,
+            checkpoint_file,
+            data_name_or_path,
+            archive_map=cls.hub_models(),
+            **kwargs,
+        )
+#         logger.info(x["args"])
+#         return hub_utils.GeneratorHubInterface(x["args"], x["task"], x["models"])
+        return TemplateHubInterface(x["args"], x["task"], x["models"])
 
 
 
@@ -1399,4 +1440,30 @@ def coco40k_architecture(args):
     args.decoder_dropout_in = getattr(args, 'decoder_dropout_in', 0.5)
     args.decoder_dropout_out = getattr(args, 'decoder_dropout_out', 0.5)
     args.decoder_out_embed_dim = getattr(args, 'decoder_out_embed_dim', 512)
+    base_architecture(args)
+    
+@register_model_architecture('sparse_prototype', 'cocov')
+def coco40k_architecture(args):
+    args.encoder_dropout_in = getattr(args, 'encoder_dropout_in', 0.3)
+    args.encoder_dropout_out = getattr(args, 'encoder_dropout_out', 0.3)
+    args.decoder_dropout_in = getattr(args, 'decoder_dropout_in', 0.3)
+    args.decoder_dropout_out = getattr(args, 'decoder_dropout_out', 0.3)
+    args.decoder_out_embed_dim = getattr(args, 'decoder_out_embed_dim', 512)
+    args.encoder_hidden_size = getattr(args, 'encoder_hidden_size', 256)
+    args.encoder_layers = getattr(args, 'encoder_layers', 3)
+    args.decoder_hidden_size = getattr(args, 'decoder_hidden_size', 256)
+    args.decoder_layers = getattr(args, 'decoder_layers', 3)
+    base_architecture(args)
+    
+@register_model_architecture('sparse_prototype', 'seedling')
+def coco40k_architecture(args):
+    args.encoder_dropout_in = getattr(args, 'encoder_dropout_in', 0.3)
+    args.encoder_dropout_out = getattr(args, 'encoder_dropout_out', 0.3)
+    args.decoder_dropout_in = getattr(args, 'decoder_dropout_in', 0.3)
+    args.decoder_dropout_out = getattr(args, 'decoder_dropout_out', 0.3)
+    args.decoder_out_embed_dim = getattr(args, 'decoder_out_embed_dim', 512)
+    args.encoder_hidden_size = getattr(args, 'encoder_hidden_size', 256)
+    args.encoder_layers = getattr(args, 'encoder_layers', 3)
+    args.decoder_hidden_size = getattr(args, 'decoder_hidden_size', 256)
+    args.decoder_layers = getattr(args, 'decoder_layers', 3)
     base_architecture(args)
