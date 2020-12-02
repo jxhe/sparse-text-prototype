@@ -9,7 +9,6 @@ NeurIPS 2020
 
 In this repo, we implement a generative model of text that generates sentences by editying non-parametric prorotypes. The prototype support set is encouraged to be sparse during training to improve the memory/time efficiency at test time.
 
-\[TODO\]: add analysis code
 
 ## Dependencies
 
@@ -19,9 +18,13 @@ Install dependencies:
 
 ```bash
 # install fairseq from a specific commit
-git clone git@github.com:pytorch/fairseq.git
-cd fairseq
+git clone git@github.com:pytorch/fairseq.git fairseq_local
+cd fairseq_local
 git reset --hard b65a85b
+
+# a modified sequence_generator.py to use edit vectors
+cp ../sparse_prototype/sequence_generator.py fairseq
+
 pip install --editable ./
 
 cd ..
@@ -115,6 +118,8 @@ bash scripts/train.sh -g [GPUs] -d [dataset name] -e iw -p [checkpoint directory
 bash scripts/train.sh -g [GPUs] -d [dataset name] -u [prune num] -e iw -p [checkpoint directory] 
 ```
 
+## Template-based Generation
+See the notebook `generate_demo.ipynb`(mainly the `sample_from_cluster` function) for examples to load the pretrained model and generate based on given templates.
 
 
 ## Citation
