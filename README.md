@@ -42,10 +42,11 @@ pip install -r requirements.txt
 gdown https://drive.google.com/uc?id=1fMBZnMZz46qC0Im6y53MnDDQGRuwoC_M
 
 # download yelp medium data
-gdown https://drive.google.com/uc?id=1Z6wc4n5UBghwyNOo-C41vXEdNG5CE1Pa
+gdown https://drive.google.com/uc?id=1Bgk94NZeoexdCWF_WPMoIFPLRjJsbuBF
 
 # download yelp large data
-gdown https://drive.google.com/uc?id=1Bgk94NZeoexdCWF_WPMoIFPLRjJsbuBF
+gdown https://drive.google.com/uc?id=1Z6wc4n5UBghwyNOo-C41vXEdNG5CE1Pa
+
 
 mkdir datasets
 
